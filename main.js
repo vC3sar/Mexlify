@@ -735,12 +735,29 @@ ipcMain.handle("downloadSong", async (event, song) => {
 
     // Guardar metadata de manera segura
     const downloadedAt = new Date().toISOString();
+    
+    // Descargar miniatura para disponibilidad offline
+    let localThumbnail = song.thumbnail || "N/A";
+    if (song.thumbnail && song.thumbnail.startsWith("http")) {
+      try {
+        const imgPath = path.join(metadataDir, `${safeTitle}.jpg`);
+        const response = await fetch(song.thumbnail);
+        if (response.ok) {
+          const buffer = await response.arrayBuffer();
+          fs.writeFileSync(imgPath, Buffer.from(buffer));
+          localThumbnail = "file:///" + imgPath.replace(/\\/g, '/');
+        }
+      } catch (e) {
+        console.error("Error al descargar thumbnail:", e);
+      }
+    }
+
     const metadata = [
       `Title: ${song.title}`,
       `Uploader: ${song.uploader || "N/A"}`,
       `Duration: ${song.duration || "N/A"}`,
       `Filename: ${safeTitle}.mp3`,
-      `Thumbnail: ${song.thumbnail || "N/A"}`,
+      `Thumbnail: ${localThumbnail}`,
       `DownloadedAt: ${downloadedAt}`,
       `CreatedAt: ${downloadedAt}`,
       `SavedAt: ${downloadedAt}`,
