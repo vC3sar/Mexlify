@@ -1,5 +1,5 @@
 const DiscordRPC = require("discord-rpc");
-const { app, BrowserWindow, ipcMain, shell, session, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, session, dialog, protocol } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const sqlite3 = require("sqlite3").verbose();
@@ -362,6 +362,17 @@ app.whenReady().then(() => {
 
   const win = createWindow();
   checkYtdlpUpdate(win);
+
+  // Registrar protocolo mexlify:// para servir imágenes locales sin bloqueo CSP
+  protocol.handle('mexlify', (request) => {
+    const rawPath = request.url.slice('mexlify://'.length);
+    const filePath = decodeURIComponent(rawPath.replace(/^\/+/, ''));
+    return new Response(
+      require('fs').createReadStream(filePath),
+      { headers: { 'Content-Type': 'image/jpeg' } }
+    );
+  });
+
   setTimeout(async () => {
     await initDiscord();
     await updateActivity("En hub", "Esperando canción...");
@@ -745,7 +756,8 @@ ipcMain.handle("downloadSong", async (event, song) => {
         if (response.ok) {
           const buffer = await response.arrayBuffer();
           fs.writeFileSync(imgPath, Buffer.from(buffer));
-          localThumbnail = "file:///" + imgPath.replace(/\\/g, '/');
+          // Usar protocolo mexlify:// en lugar de file:// para evitar bloqueo CSP
+          localThumbnail = 'mexlify://' + imgPath.replace(/\\/g, '/');
         }
       } catch (e) {
         console.error("Error al descargar thumbnail:", e);
