@@ -380,7 +380,7 @@ function renderQueue() {
       li.classList.add("playing");
     }
     li.innerHTML = `
-      <img class="queue-thumb" src="${song.thumbnail}" alt="${song.title}">
+      <img class="queue-thumb" src="${song.thumbnail}" alt="${song.title}" onerror="this.onerror=null; this.src='resources/player.gif';">
       <span class="song-title">${song.title}</span>
     `;
     const isLocal = !!song.filename;
@@ -487,7 +487,7 @@ async function loadDownloaded() {
       : "N/A";
 
     li.innerHTML = `
-      <img src="${thumbnail}" alt="Thumbnail">
+      <img src="${thumbnail}" alt="Thumbnail" onerror="this.onerror=null; this.src='resources/player.gif';">
       <div class="song-info">
         <b>${song.Title || "Título desconocido"}</b><br>
         ${song.Uploader || "Artista desconocido"} (${duration})
@@ -634,7 +634,7 @@ async function searchSongDirectPlay(query = "") {
     results.forEach((song) => {
       const li = document.createElement("li");
       li.innerHTML = `
-        <img class="play" src="${song.thumbnail || ""}">
+        <img class="play" src="${song.thumbnail || ""}" onerror="this.onerror=null; this.src='resources/player.gif';">
         <div class="song-info">
             <b>${song.title || "Sin título"}</b><br>
             ${song.uploader || "Desconocido"} (${song.duration || "?"}s)
@@ -754,7 +754,7 @@ async function searchSongs() {
     results.forEach((song) => {
       const li = document.createElement("li");
       li.innerHTML = `
-        <img class="play" src="${song.thumbnail}">
+        <img class="play" src="${song.thumbnail}" onerror="this.onerror=null; this.src='resources/player.gif';">
         <div class="song-info">
             <b>${song.title}</b><br>
             ${song.uploader} (${song.duration}s)
@@ -997,7 +997,7 @@ async function showArtistRecommendations(artistName) {
     });
 
     li.innerHTML = `
-      <img src="${track.artworkUrl60}" alt="${track.trackName} cover" />
+      <img src="${track.artworkUrl60}" alt="${track.trackName} cover" onerror="this.onerror=null; this.src='resources/player.gif';" />
       <strong>${track.trackName}</strong> - ${track.artistName} 
     `;
 
@@ -1547,7 +1547,7 @@ function renderRecents() {
       : song.duration || "N/A";
 
     li.innerHTML = `
-      <img class="play" src="${song.thumbnail}" style="cursor: pointer;">
+      <img class="play" src="${song.thumbnail}" style="cursor: pointer;" onerror="this.onerror=null; this.src='resources/player.gif';">
       <div class="song-info">
           <b>${song.title}</b><br>
           ${song.uploader} (${formattedDuration})
@@ -1891,7 +1891,7 @@ function renderPlaylistSongs(pl) {
       : "";
 
     li.innerHTML = `
-      <img class="play" src="${thumb}" alt="${song.title}" style="cursor:pointer;">
+      <img class="play" src="${thumb}" alt="${song.title}" style="cursor:pointer;" onerror="this.onerror=null; this.src='resources/player.gif';">
       <div class="song-info">
         <b>${song.title}</b><br>
         ${song.uploader || ""} ${dur ? "(" + dur + ")" : ""}
@@ -2294,7 +2294,7 @@ async function showMostPlayedList() {
         <li style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; padding: 10px 15px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" class="most-played-item" data-index="${idx}">
           <div style="display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; padding-right: 15px;">
             <span style="font-weight: bold; color: rgba(255,255,255,0.5); min-width: 20px; font-family: Poppins, sans-serif;">${idx + 1}</span>
-            <img src="${thumb}" style="width: 42px; height: 42px; border-radius: 8px; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;" class="play-most-played-thumb">
+            <img src="${thumb}" style="width: 42px; height: 42px; border-radius: 8px; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;" class="play-most-played-thumb" onerror="this.onerror=null; this.src='resources/player.gif';">
             <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
               <a href="#" class="play-song-link" style="font-weight: bold; text-decoration: none; color: #fff; font-family: Poppins, sans-serif; font-size: 0.95rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cleanSongTitle(song.title)}</a>
               <span style="color: rgba(255,255,255,0.6); font-size: 0.85rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${song.uploader}</span>
@@ -2427,15 +2427,15 @@ async function renderMostPlayedCardCover() {
     if (uniqueThumbs.length >= 4) {
       coverContainer.innerHTML = `
         <div class="spotify-cover-collage">
-          <img src="${uniqueThumbs[0]}">
-          <img src="${uniqueThumbs[1]}">
-          <img src="${uniqueThumbs[2]}">
-          <img src="${uniqueThumbs[3]}">
+          <img src="${uniqueThumbs[0]}" onerror="this.onerror=null; this.src='resources/player.gif';">
+          <img src="${uniqueThumbs[1]}" onerror="this.onerror=null; this.src='resources/player.gif';">
+          <img src="${uniqueThumbs[2]}" onerror="this.onerror=null; this.src='resources/player.gif';">
+          <img src="${uniqueThumbs[3]}" onerror="this.onerror=null; this.src='resources/player.gif';">
         </div>
       `;
     } else {
       const primaryCover = uniqueThumbs[0] || "resources/player.gif";
-      coverContainer.innerHTML = `<img src="${primaryCover}" class="spotify-cover-single">`;
+      coverContainer.innerHTML = `<img src="${primaryCover}" class="spotify-cover-single" onerror="this.onerror=null; this.src='resources/player.gif';">`;
     }
   } catch (err) {
     console.error("Error al renderizar la portada de más escuchadas:", err);
@@ -2541,6 +2541,56 @@ document.addEventListener("DOMContentLoaded", () => {
       color2HexLabel.textContent = color2Input.value.toUpperCase();
     });
   }
+
+  // Comprobar estado de red
+  if (!navigator.onLine) {
+    setTimeout(() => {
+      if (typeof Notify !== 'undefined') {
+        new Notify({
+          status: "warning",
+          title: "Modo Sin Conexión",
+          text: "Funciones limitadas. Solo puedes escuchar música descargada.",
+          effect: "fade",
+          speed: 300,
+          showIcon: true,
+          showCloseButton: true,
+          autoclose: false,
+          type: "outline",
+          position: "right top"
+        });
+      } else if (typeof Swal !== 'undefined') {
+        Swal.fire('Modo Sin Conexión', 'Funciones limitadas.', 'warning');
+      }
+    }, 1000);
+  }
+
+  window.addEventListener('offline', () => {
+    if (typeof Notify !== 'undefined') {
+      new Notify({
+        status: "warning",
+        title: "Conexión Perdida",
+        text: "Modo sin conexión activado.",
+        effect: "fade",
+        position: "right top",
+        autoclose: true,
+        autotimeout: 5000
+      });
+    }
+  });
+
+  window.addEventListener('online', () => {
+    if (typeof Notify !== 'undefined') {
+      new Notify({
+        status: "success",
+        title: "Conexión Restaurada",
+        text: "Estás en línea nuevamente.",
+        effect: "fade",
+        position: "right top",
+        autoclose: true,
+        autotimeout: 5000
+      });
+    }
+  });
 });
 
 
