@@ -712,13 +712,16 @@ h1 {
 
 #songTitle {
     font-weight: 700;
-    display: block;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
     color: #ffffff;
     font-size: 1.05rem;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
+    word-break: break-word;
+    overflow-wrap: break-word;
     width: 100%;
+    line-height: 1.35;
 }
 
 #songTitle:hover {
