@@ -43,8 +43,15 @@
     <div id="queueOverlay"></div>
     <div id="queuetab" class="vaen-queue-container">
         <div class="queue-drawer-header">
-            <h3><i class="ph ph-queue"></i> Lista de reproducción</h3>
-            <button id="closeQueueBtn" class="queue-close-btn" title="Cerrar cola"><i class="ph ph-x"></i></button>
+            <div class="queue-header-left">
+                <h3><i class="ph ph-queue"></i> Cola de reproducción</h3>
+                <span id="queueCountBadge" class="queue-count-badge">0 canciones</span>
+            </div>
+            <div class="queue-header-actions">
+                <button id="queueShuffleBtn" class="queue-action-btn" title="Mezclar cola aleatoriamente"><i class="ph ph-shuffle"></i></button>
+                <button id="clearQueueBtn" class="queue-action-btn" title="Vaciar cola de reproducción"><i class="ph ph-trash"></i></button>
+                <button id="closeQueueBtn" class="queue-close-btn" title="Cerrar cola"><i class="ph ph-x"></i></button>
+            </div>
         </div>
         <ul id="queueList"></ul>
     </div>
@@ -66,6 +73,58 @@
             <button id="msgTabSistem" class="msg-tab-btn">Sistem</button>
         </div>
         <ul id="messagesList" class="messages-drawer-list"></ul>
+    </div>
+
+    <!-- Lyrics View Panel (Inspirado en Apple Music) -->
+    <div id="lyricsViewOverlay" class="lyrics-view-overlay is-hidden"></div>
+    <div id="lyricsViewPanel" class="lyrics-view-panel is-hidden" aria-hidden="true">
+        <!-- Fondo ambiental dinámico con carátula difuminada -->
+        <div class="lyrics-bg-mesh">
+            <img id="lyricsBgArtwork" src="resources/player.gif" alt="" />
+        </div>
+        <div class="lyrics-backdrop-scrim"></div>
+
+        <!-- Barra superior del panel de letras -->
+        <div class="lyrics-header">
+            <div class="lyrics-header-left">
+                <span class="lyrics-app-badge"><i class="ph ph-quotes"></i> Letras</span>
+                <span id="lyricsModeBadge" class="lyrics-mode-badge is-hidden">Sincronizada</span>
+            </div>
+            <div class="lyrics-header-right">
+                <button id="lyricsRetrySearchBtn" class="lyrics-header-action-btn" title="Buscar de nuevo"><i class="ph ph-arrow-clockwise"></i></button>
+                <button id="closeLyricsBtn" class="lyrics-header-close-btn" title="Cerrar letras (Esc)"><i class="ph ph-x"></i></button>
+            </div>
+        </div>
+
+        <!-- Contenido principal: Columna de carátula/meta + Flujo de letras -->
+        <div class="lyrics-content-layout">
+            <!-- Columna izquierda: Información y carátula -->
+            <div class="lyrics-album-column">
+                <div class="lyrics-artwork-card">
+                    <img id="lyricsCoverImg" src="resources/player.gif" alt="Carátula" />
+                    <div class="lyrics-cover-glow"></div>
+                </div>
+                <div class="lyrics-song-meta">
+                    <h2 id="lyricsTrackTitle" class="lyrics-song-title">Nombre de la canción</h2>
+                    <h3 id="lyricsArtistName" class="lyrics-song-artist">Artista</h3>
+                    <p id="lyricsAlbumName" class="lyrics-song-album"></p>
+                </div>
+            </div>
+
+            <!-- Columna derecha: Flujo vertical de líneas de letra -->
+            <div class="lyrics-stream-column">
+                <div class="lyrics-scroll-viewport" id="lyricsScrollViewport">
+                    <div id="lyricsLinesContainer" class="lyrics-lines-container">
+                        <!-- Líneas sincronizadas, texto sin sincronizar o estado no disponible -->
+                    </div>
+                </div>
+
+                <!-- Botón flotante para resincronizar si el usuario hace scroll manual -->
+                <button id="lyricsSyncPillBtn" class="lyrics-sync-pill is-hidden" title="Volver a la línea actual">
+                    <i class="ph ph-arrow-down-left"></i> Sincronizar
+                </button>
+            </div>
+        </div>
     </div>
 
     <div id="app">
@@ -168,23 +227,30 @@
                 <div class="tab-content">
                     <!-- Pestaña Buscar -->
                     <div id="searchContainer" class="view-section">
-                        <!-- Rediseño Premium del Buscador -->
-                        <div class="search-hero-card glass-box-premium">
+                        <!-- Buscador -->
+                        <div class="search-hero-card">
                             <div class="search-title-row">
-                                <i class="ph-fill ph-sparkle glow-pink"></i>
                                 <span>Buscar canciones</span>
                             </div>
                             <div id="searchBar" class="premium-search-bar">
-                                <span class="searchIcon"><i class="ph ph-magnifying-glass"></i></span>
-                                <input id="searchInput" placeholder="¿Qué canción quieres escuchar hoy?">
-                                <button id="searchButton" class="search-action-btn"><i class="ph ph-magnifying-glass"></i></button>
+                                <span class="searchIcon" aria-hidden="true"><i class="ph ph-magnifying-glass"></i></span>
+                                <input
+                                    id="searchInput"
+                                    type="search"
+                                    placeholder="Título de la canción o artista..."
+                                    aria-label="Buscar canciones por título o artista"
+                                    autocomplete="off"
+                                    autocorrect="off"
+                                    spellcheck="false"
+                                >
+                                <button id="searchClearBtn" class="search-clear-btn is-hidden" type="button" title="Borrar texto" aria-label="Borrar texto de búsqueda">
+                                    <i class="ph ph-x"></i>
+                                </button>
+                                <button id="searchButton" class="search-action-btn" type="button" title="Buscar canciones" aria-label="Buscar canciones">
+                                    <i class="ph ph-magnifying-glass"></i>
+                                </button>
                             </div>
-                            
-
-                            <span class="search-tip-label">
-                                <i class="ph ph-lightbulb"></i>
-                                <strong>Tip:</strong> Para búsquedas más precisas, añade el autor de la canción.
-                            </span>
+                            <span class="search-tip-label">Combina título y artista para resultados más precisos.</span>
                         </div>
 
                         <div class="ListHeader" id="searchResultsHeader" style="display: none;">
@@ -237,7 +303,16 @@
                     <!-- Pestaña Playlists -->
                     <div id="playlistsContainer" class="view-section is-hidden">
                         <div class="ListHeader">
-                            <h2>Mis Playlists</h2>
+                            <div class="header-title-group">
+                                <h2>Mis Playlists</h2>
+                                <span class="stat-badge" id="playlistsCountBadge">0 creadas</span>
+                            </div>
+                            <div class="header-actions-group" style="display: flex; gap: 10px;">
+                                <input type="file" id="importCsvFileInput" accept=".csv" style="display: none;">
+                                <button id="importCsvBtn" class="changeBg" style="margin: 0; padding: 8px 16px;">
+                                    <i class="ph ph-file-arrow-up"></i> Importar Exportify (.csv)
+                                </button>
+                            </div>
                         </div>
                         
                         <!-- Panel de creación rediseñado -->
@@ -249,19 +324,90 @@
                             <button id="createPlaylistBtn" class="changeBg"><i class="ph ph-plus"></i> Crear</button>
                         </div>
 
+                        <!-- Dropzone animada para arrastrar archivos .csv -->
+                        <div id="playlistDropZone" class="playlist-drop-zone is-hidden">
+                            <i class="ph ph-file-csv" style="font-size: 2.8rem; color: #ff0090;"></i>
+                            <p style="margin: 8px 0 0 0; font-weight: 600;">Suelta tu archivo .csv aquí</p>
+                            <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Importación automática con carátulas de Spotify</span>
+                        </div>
+
                         <div class="playlists-grid" id="playlistsGrid">
                             <!-- Aquí se cargarán las tarjetas de las playlists creadas -->
                         </div>
                         
                         <div id="playlistDetailView" class="playlist-detail-view is-hidden">
                             <div class="playlist-detail-header-premium">
-                                <button id="backToPlaylistsBtn" class="backtop-premium"><i class="ph ph-arrow-left"></i> Volver</button>
-                                <div class="playlist-detail-meta">
-                                    <h3 id="currentPlaylistTitle">Nombre de la Playlist</h3>
-                                    <span class="playlist-meta-count" id="playlistMetaCount">0 canciones</span>
+                                <!-- Barra superior de navegación y gestión de la playlist -->
+                                <div class="playlist-detail-topbar">
+                                    <button id="backToPlaylistsBtn" class="backtop-premium" title="Volver al catálogo de playlists">
+                                        <i class="ph ph-arrow-left"></i>
+                                        <span>Volver a playlists</span>
+                                    </button>
+                                    <div class="playlist-quick-actions">
+                                        <button id="renamePlaylistBtn" class="playlist-header-icon-btn" title="Renombrar playlist">
+                                            <i class="ph ph-pencil-simple"></i>
+                                            <span class="btn-label-desktop">Renombrar</span>
+                                        </button>
+                                        <button id="deletePlaylistFromDetailBtn" class="playlist-header-icon-btn btn-danger" title="Eliminar playlist permanentemente">
+                                            <i class="ph ph-trash"></i>
+                                            <span class="btn-label-desktop">Eliminar</span>
+                                        </button>
+                                    </div>
                                 </div>
-                                <button id="playPlaylistBtn" class="changeBg" style="margin: 0; padding: 8px 16px;"><i class="ph ph-play"></i> Reproducir Todo</button>
+
+                                <!-- Contenido Hero Principal: Carátula e información -->
+                                <div class="playlist-header-hero">
+                                    <div class="playlist-hero-cover" id="playlistHeroCover">
+                                        <!-- Carátula o collage dinámico inyectado por getPlaylistCoverHTML -->
+                                    </div>
+                                    <div class="playlist-detail-meta">
+                                        <span class="playlist-meta-type"><i class="ph ph-playlist"></i> LISTA DE REPRODUCCIÓN</span>
+                                        <h2 id="currentPlaylistTitle" class="playlist-hero-title">Nombre de la Playlist</h2>
+                                        <div class="playlist-meta-chips">
+                                            <span class="playlist-chip">
+                                                <i class="ph ph-music-notes"></i>
+                                                <span id="playlistMetaCount">0 canciones</span>
+                                            </span>
+                                            <span class="playlist-chip-dot">•</span>
+                                            <span class="playlist-chip">
+                                                <i class="ph ph-clock"></i>
+                                                <span id="playlistMetaDuration">0 min</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Barra de acciones de reproducción y biblioteca -->
+                                <div class="playlist-hero-actions">
+                                    <button id="playPlaylistBtn" class="playlist-action-primary" title="Reproducir playlist desde el inicio">
+                                        <i class="ph-fill ph-play"></i>
+                                        <span>Reproducir</span>
+                                    </button>
+                                    <button id="shufflePlaylistBtn" class="playlist-action-secondary" title="Reproducción Aleatoria (Shuffle)">
+                                        <i class="ph ph-shuffle"></i>
+                                        <span>Aleatorio</span>
+                                    </button>
+                                    <button id="queueAllPlaylistBtn" class="playlist-action-secondary" title="Añadir toda la playlist a la cola de reproducción">
+                                        <i class="ph ph-list-plus"></i>
+                                        <span>Añadir a cola</span>
+                                    </button>
+                                    <button id="downloadAllPlaylistBtn" class="playlist-action-secondary" title="Descargar todas las canciones fuera de línea">
+                                        <i class="ph ph-download-simple"></i>
+                                        <span>Descargar Todo</span>
+                                    </button>
+                                    <button id="syncPlaylistBtn" class="playlist-action-secondary" title="Vincular canciones con YouTube">
+                                        <i class="ph ph-arrows-clockwise"></i>
+                                        <span>Vincular</span>
+                                    </button>
+                                </div>
                             </div>
+
+                            <!-- Filtro buscador local de playlist -->
+                            <div class="local-filter-bar" style="margin: 15px 0;">
+                                <i class="ph ph-magnifying-glass"></i>
+                                <input id="playlistFilterInput" placeholder="Filtrar canciones en esta playlist...">
+                            </div>
+
                             <ul id="playlistSongsList" class="song-list">
                                 <!-- Canciones de la playlist actual -->
                             </ul>
@@ -469,48 +615,60 @@
             <aside class="player-area">
                 <div id="playerContainer">
                     <div id="playerCard">
-                        <img id="cover" src="resources/player.gif" alt="Carátula" />
+                        <!-- Portada con marco y resplandor ambiental -->
+                        <div class="player-cover-wrapper">
+                            <img id="cover" src="resources/player.gif" alt="Carátula" onerror="this.onerror=null; this.src='resources/player.gif';" />
+                        </div>
+
+                        <!-- Información de la canción -->
                         <div id="songInfo">
-                            <span id="songTitle">Nombre de la canción</span>
-                            <span id="songArtist">Artista</span>
+                            <span id="songTitle" title="Nombre de la canción">Nombre de la canción</span>
+                            <span id="songArtist" title="Artista">Artista</span>
                             <div id="songGenre" class="is-hidden"></div>
                         </div>
 
-                        <!-- Audio invisible -->
-                        <div class="player" style="visibility: hidden;">
+                        <!-- Audio invisible técnico -->
+                        <div class="player" style="visibility: hidden; position: absolute; pointer-events: none;">
                             <audio id="player" style="visibility: hidden;"></audio>
                         </div>
 
-                        <!-- Barra de progreso -->
+                        <!-- Barra de progreso e información temporal armónica -->
                         <div class="progress-container">
                             <div id="time-info">
                                 <span id="currentTime">0:00</span> / <span id="totalTime">0:00</span>
                             </div>
                             <div class="progress-bar-wrapper">
-                                <input type="range" id="progressBar" min="0" max="100" value="0"
-                                    step="0.001" disabled>
+                                <input type="range" id="progressBar" min="0" max="100" value="0" step="0.001" disabled>
                             </div>
                             <div class="reproduciendo-text-container">
                                 <span id="reproduciendoText" class="reproduciendo-text">REPRODUCIENDO</span>
                             </div>
                         </div>
 
-                        <!-- Controles -->
+                        <!-- Controles de reproducción simétricos de alta fidelidad -->
                         <div class="controls-container">
                             <div class="playback-controls">
-                                <button id="prevBtn" title="Anterior"><i style="font-size: larger;" class="ph ph-skip-back"></i></button>
-                                <button id="playPauseBtn"><i style="font-size: larger;" class="ph ph-play"></i></button>
-                                <button id="nextBtn" title="Siguiente"><i style="font-size: larger;" class="ph ph-skip-forward"></i></button>
-                                <button id="repeatBtn"><i style="font-size: larger;" class="ph ph-repeat-once"></i></button>
+                                <button id="shuffleBtn" class="control-btn-secondary" title="Aleatorio (Shuffle)"><i class="ph ph-shuffle"></i></button>
+                                <button id="prevBtn" class="control-btn-skip" title="Anterior"><i class="ph-fill ph-skip-back"></i></button>
+                                <button id="playPauseBtn" class="control-btn-play" title="Reproducir / Pausar"><i class="ph-fill ph-play"></i></button>
+                                <button id="nextBtn" class="control-btn-skip" title="Siguiente"><i class="ph-fill ph-skip-forward"></i></button>
+                                <button id="repeatBtn" class="control-btn-secondary" title="Repetir"><i class="ph ph-repeat"></i></button>
                             </div>
+                            
+                            <!-- Control de volumen compacto en píldora -->
                             <div class="volume-controls-row">
-                                <button id="muteBtn"><i style="font-size: larger;" class="ph ph-speaker-high"></i></button>
+                                <button id="muteBtn" title="Silenciar / Activar sonido"><i class="ph ph-speaker-high"></i></button>
                                 <input type="range" id="volumeSlider" min="0" max="0.95" step="0.0001" value="0.5">
                             </div>
                         </div>
-                        <div class="queue-button-container">
-                            <button id="queueTabButton" class="queue-button">
-                                <i class="ph ph-queue"></i> Lista de reproducción
+
+                        <!-- Barra de utilidades dual: Letras y Cola de reproducción -->
+                        <div class="queue-button-container player-actions-group">
+                            <button id="lyricsTabButton" class="queue-button lyrics-toggle-btn" title="Ver letras sincronizadas">
+                                <i class="ph ph-quotes"></i> Letras
+                            </button>
+                            <button id="queueTabButton" class="queue-button" title="Ver cola de reproducción">
+                                <i class="ph ph-queue"></i> Cola
                             </button>
                         </div>
                     </div>
@@ -542,11 +700,16 @@
             </div>
         </div>
         <div class="fcp-right">
-            <button class="fcp-btn" id="fcp_repeatBtn"><i style="font-size: larger;"
-                    class="ph ph-repeat-once"></i></button>
+            <button class="fcp-btn" id="fcp_shuffleBtn" title="Aleatorio (Shuffle)"><i style="font-size: larger;"
+                    class="ph ph-shuffle"></i></button>
+            <button class="fcp-btn" id="fcp_repeatBtn" title="Repetir"><i style="font-size: larger;"
+                    class="ph ph-repeat"></i></button>
             <button class="fcp-btn" id="fcp_muteBtn"><i style="font-size: larger;"
                     class="ph ph-speaker-high"></i></button>
             <input id="fcp-volumeSlider" type="range" class="fcp-volume" min="0" max="0.95" step="0.0001" value="0.5">
+            <button class="fcp-btn" id="fcp-lyricsBtn" title="Letras">
+                <i style="font-size: larger;" class="ph ph-quotes"></i>
+            </button>
             <button class="fcp-btn" id="fcp-queueBtn" title="Lista de reproducción">
                 <i style="font-size: larger;" class="ph ph-queue"></i>
             </button>
@@ -574,6 +737,143 @@
         </div>
     </div>
 
+    <!-- Modal para seleccionar canciones y exportar a ZIP (iPod, MP3, USB) -->
+    <div id="exportZipModalOverlay" class="playlist-modal-overlay is-hidden">
+        <div class="playlist-modal-content export-modal-content glass-box">
+            <div class="playlist-modal-header">
+                <div class="export-header-title">
+                    <i class="ph ph-file-zip"></i>
+                    <div>
+                        <h3>Exportar música fuera de línea</h3>
+                        <p class="export-subtitle">Selecciona canciones para tu dump (iPod, MP3, USB)</p>
+                    </div>
+                </div>
+                <button id="closeExportZipModalBtn" class="messages-action-btn" title="Cerrar"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="playlist-modal-body export-modal-body">
+                <!-- Estadísticas y contadores -->
+                <div class="export-stats-bar">
+                    <span class="export-stat-pill pill-total">Total: <b id="exportStatTotal">0</b></span>
+                    <span class="export-stat-pill pill-new">✨ Nuevas: <b id="exportStatNew">0</b></span>
+                    <span class="export-stat-pill pill-exported">💾 Ya exportadas: <b id="exportStatOld">0</b></span>
+                    <span class="export-stat-pill pill-selected">Seleccionadas: <b id="exportStatSelected">0</b></span>
+                </div>
+
+                <!-- Botones de selección rápida -->
+                <div class="export-quick-actions">
+                    <button id="exportSelectOnlyNewBtn" class="export-chip-btn active" title="Marcar solo las canciones que no se han exportado antes">
+                        <i class="ph ph-sparkle"></i> Solo nuevas
+                    </button>
+                    <button id="exportSelectAllBtn" class="export-chip-btn" title="Marcar todas las canciones">
+                        <i class="ph ph-check-square"></i> Todas
+                    </button>
+                    <button id="exportDeselectAllBtn" class="export-chip-btn" title="Desmarcar todas las canciones">
+                        <i class="ph ph-square"></i> Ninguna
+                    </button>
+                    <button id="exportResetHistoryBtn" class="export-chip-btn chip-danger" title="Reiniciar historial para que todas cuenten como nuevas">
+                        <i class="ph ph-arrow-counter-clockwise"></i> Reiniciar historial
+                    </button>
+                </div>
+
+                <!-- Sección: Excluir canciones ya exportadas (.mexref) -->
+                <div class="mexref-section-container">
+                    <div class="mexref-header-row">
+                        <div class="mexref-title-group">
+                            <span class="mexref-section-title"><i class="ph ph-file-code"></i> Excluir canciones ya exportadas</span>
+                            <span class="mexref-count-badge" id="mexrefTotalLoadedBadge">0 referencias cargadas</span>
+                        </div>
+                        <button id="importMexrefBtn" class="export-chip-btn mexref-import-btn" title="Cargar uno o más archivos .mexref para excluir canciones">
+                            <i class="ph ph-file-arrow-up"></i> Importar archivos .mexref
+                        </button>
+                    </div>
+
+                    <!-- Input file invisible como fallback -->
+                    <input type="file" id="mexrefFileInput" accept=".mexref" multiple style="display: none;">
+
+                    <!-- Lista de archivos .mexref importados (chips interactivos con botón para retirar) -->
+                    <div id="mexrefFilesList" class="mexref-files-chips-container is-hidden">
+                        <!-- Chips inyectados dinámicamente -->
+                    </div>
+
+                    <!-- Resumen / Indicador de exclusión -->
+                    <div id="mexrefExclusionSummary" class="mexref-summary-box is-hidden">
+                        <div class="mexref-summary-item">
+                            <span class="mexref-summary-label">Canciones originales:</span>
+                            <strong id="mexrefOrigCount">0</strong>
+                        </div>
+                        <div class="mexref-summary-item text-excluded">
+                            <span class="mexref-summary-label"><i class="ph ph-prohibit"></i> Se excluirán:</span>
+                            <strong id="mexrefExcludedCount">0</strong>
+                        </div>
+                        <div class="mexref-summary-item text-remaining">
+                            <span class="mexref-summary-label"><i class="ph ph-check-circle"></i> Restantes a exportar:</span>
+                            <strong id="mexrefRemainingCount">0</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Buscador de canciones -->
+                <div class="export-search-box">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input id="exportModalSearchInput" type="text" placeholder="Filtrar canciones por título o artista...">
+                </div>
+
+                <!-- Lista scrolleable con canciones y checkboxes -->
+                <div class="export-songs-list" id="exportSongsList">
+                    <!-- Se inyecta dinámicamente -->
+                </div>
+
+                <!-- Footer con botones -->
+                <div class="export-modal-footer">
+                    <button id="exportCancelBtn" class="export-btn-secondary">Cancelar</button>
+                    <button id="exportConfirmBtn" class="export-btn-primary changeBg">
+                        <i class="ph ph-download-simple"></i> Exportar seleccionadas (.zip)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal UI/UX de Progreso de Exportación -->
+    <div id="exportProgressModalOverlay" class="playlist-modal-overlay is-hidden">
+        <div class="playlist-modal-content export-progress-modal-content glass-box">
+            <div class="export-progress-header">
+                <div class="export-progress-icon-wrap">
+                    <i class="ph ph-file-zip"></i>
+                </div>
+                <div class="export-progress-header-text">
+                    <h3 id="exportProgressTitle">Exportando tu música...</h3>
+                    <p id="exportProgressSubtitle">Incrustando carátulas HD y etiquetas ID3v2</p>
+                </div>
+            </div>
+
+            <div class="export-progress-body">
+                <!-- Tarjeta con la canción que se está procesando actualmente -->
+                <div class="export-progress-song-card" id="exportProgressCurrentSongCard">
+                    <div class="export-progress-song-details">
+                        <span id="exportProgressSongTitle" class="export-progress-song-name">Iniciando proceso...</span>
+                        <span id="exportProgressSongStep" class="export-progress-song-step">Preparando archivos</span>
+                    </div>
+                </div>
+
+                <!-- Barra de progreso con gradiente y animación -->
+                <div class="export-progress-bar-container">
+                    <div class="export-progress-bar-track">
+                        <div id="exportProgressBarFill" class="export-progress-bar-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="export-progress-bar-meta">
+                        <span id="exportProgressCounterText">0 / 0 canciones</span>
+                        <span id="exportProgressPercentText">0%</span>
+                    </div>
+                </div>
+
+                <div class="export-progress-status-footer" id="exportProgressStatusText">
+                    <i class="ph ph-hourglass-high"></i> Por favor espera, no cierres la aplicación...
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="assets/js/script.js" defer></script>
     <script src="assets/js/topSongs.js" defer></script>
     <script src="assets/js/messages.js" defer></script>
@@ -581,6 +881,7 @@
     <script src="assets/js/style.js" defer></script>
     <script src="assets/js/modal.js" defer></script>
     <script src="assets/js/equalizer.js"></script>
+    <script src="assets/js/lyrics.js" defer></script>
 </body>
 
 </html>

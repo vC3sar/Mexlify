@@ -4,8 +4,8 @@ const { spawn } = require("child_process");
 
 const DEFAULT_TTL_MS = 40 * 60 * 1000;
 const DEFAULT_SEARCH_TTL_MS = 12 * 60 * 60 * 1000;
-const DEFAULT_TIMEOUT_MS = 15000;
-const DEFAULT_CONCURRENCY = 2;
+const DEFAULT_TIMEOUT_MS = 35000;
+const DEFAULT_CONCURRENCY = 1;
 
 class ProcessQueue {
   constructor(concurrency = DEFAULT_CONCURRENCY, logger = console.log) {
@@ -15,9 +15,14 @@ class ProcessQueue {
     this.jobs = [];
   }
 
-  add(job) {
+  add(job, options = {}) {
     return new Promise((resolve, reject) => {
-      this.jobs.push({ job, resolve, reject });
+      const item = { job, resolve, reject };
+      if (options.priority) {
+        this.jobs.unshift(item);
+      } else {
+        this.jobs.push(item);
+      }
       this.logger(`[resolver] queue size: ${this.jobs.length}`);
       this.next();
     });
@@ -123,10 +128,18 @@ function isUsableStream(entry, now = Date.now()) {
   return Boolean(entry?.streamUrl && entry?.resolvedAt && entry?.expiresAt > now);
 }
 
+function isYouTubeRateLimitError(error) {
+  const message = String(error?.message || error || "");
+  return /rate-limited by YouTube|HTTP Error 429|too many requests|Sign in to confirm you’re not a bot/i.test(message);
+}
+
 function classifyYtdlpError(error) {
   const message = String(error?.message || error || "");
   const lower = message.toLowerCase();
 
+  if (isYouTubeRateLimitError(error)) {
+    return "YouTube ha aplicado un límite temporal de solicitudes (HTTP 429). Espera unos minutos o reproduce música descargada.";
+  }
   if (error?.code === "ENOENT") {
     return "yt-dlp no esta instalado o no se encontro el ejecutable.";
   }
@@ -162,6 +175,7 @@ function createYtdlpResolver(options) {
   state.tracks ||= {};
   state.searches ||= {};
 
+  let rateLimitUntil = 0;
   const pendingResolves = new Map();
   const queue = new ProcessQueue(concurrency, logger);
 
@@ -260,9 +274,14 @@ function createYtdlpResolver(options) {
         "--no-playlist",
         "--quiet",
         "--no-warnings",
+        "--no-check-certificates",
         "--skip-download",
         "-f",
-        "bestaudio[ext=m4a]/bestaudio",
+        "bestaudio[ext=m4a]/bestaudio/best",
+        "--extractor-args",
+        "youtube:player_client=mweb,android",
+        "--sleep-requests",
+        "1.5",
         "--get-url",
       ];
 
@@ -309,7 +328,12 @@ function createYtdlpResolver(options) {
         clearTimeout(timer);
 
         if (code !== 0) {
-          reject(new Error(stderr.trim() || `yt-dlp exited with code ${code}`));
+          const errMsg = stderr.trim() || `yt-dlp exited with code ${code}`;
+          if (isYouTubeRateLimitError(errMsg)) {
+            rateLimitUntil = Date.now() + 15 * 60 * 1000;
+            logger(`[resolver] ⚠️ YouTube rate-limit (429) detectado. Pausando precargas automáticas por 15 min.`);
+          }
+          reject(new Error(errMsg));
           return;
         }
 
@@ -342,11 +366,19 @@ function createYtdlpResolver(options) {
       if (cached) return cached;
     }
 
+    if (rateLimitUntil > Date.now()) {
+      if (options.isPrewarm) {
+        logger(`[resolver] prewarm omitido: rate limit de YouTube activo`);
+        return null;
+      }
+    }
+
     if (pendingResolves.has(key)) {
       logger(`[resolver] reuse pending resolve: ${key}`);
       return pendingResolves.get(key);
     }
 
+    const isPriority = !options.isPrewarm;
     const job = queue
       .add(async () => {
         const streamUrl = await runYtdlpGetUrl(sourceUrl);
@@ -359,7 +391,7 @@ function createYtdlpResolver(options) {
         });
         persist();
         return streamUrl;
-      })
+      }, { priority: isPriority })
       .catch((error) => {
         const friendly = classifyYtdlpError(error);
         logger(`[resolver] error: ${friendly}`);
@@ -371,14 +403,18 @@ function createYtdlpResolver(options) {
     return job;
   }
 
-  function prewarmTracks(tracks, limit = 3) {
+  function prewarmTracks(tracks, limit = 1) {
+    if (rateLimitUntil > Date.now()) {
+      logger(`[resolver] prewarm omitido: rate limit activo.`);
+      return 0;
+    }
     const startedAt = Date.now();
     const candidates = (Array.isArray(tracks) ? tracks : [])
       .filter((track) => track?.url || track?.sourceUrl)
-      .slice(0, limit);
+      .slice(0, Math.min(limit, 1));
 
     candidates.forEach((track) => {
-      resolveTrack(track).catch((error) => {
+      resolveTrack(track, { isPrewarm: true }).catch((error) => {
         logger(`[resolver] prewarm failed: ${classifyYtdlpError(error)}`);
       });
     });

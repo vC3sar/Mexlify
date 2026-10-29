@@ -64,8 +64,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return await ipcRenderer.invoke("deleteDownload", filename);
   },
 
-  exportDownloadsToZip: async () => {
-    return await ipcRenderer.invoke("exportDownloadsToZip");
+  exportDownloadsToZip: async (selectedFilenames) => {
+    return await ipcRenderer.invoke("exportDownloadsToZip", selectedFilenames);
   },
 
   openExternal: async (url) => {
@@ -84,5 +84,26 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Recibir mensajes de actualización de yt-dlp
   onYtdlpUpdate: (callback) => {
     ipcRenderer.on("ytdlp-update-status", (_event, value) => callback(value));
+  },
+
+  // Eventos de progreso de exportación
+  onExportProgress: (callback) => {
+    ipcRenderer.on("export-progress", (_event, data) => callback(data));
+  },
+  removeExportProgressListener: () => {
+    ipcRenderer.removeAllListeners("export-progress");
+  },
+
+  // Gestión de archivos .mexref
+  saveMexrefFile: async (payload) => {
+    return await ipcRenderer.invoke("save-mexref-file", payload);
+  },
+  readMexrefFiles: async () => {
+    return await ipcRenderer.invoke("read-mexref-files");
+  },
+
+  // Sistema de letras LRCLIB con sincronización y caché SQLite
+  getLyrics: async (songParams) => {
+    return await ipcRenderer.invoke("get-lyrics", songParams);
   },
 });

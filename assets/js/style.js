@@ -100,45 +100,50 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const img = document.getElementById("cover");
 
-    // Asegúrate de que la imagen esté completamente cargada antes de procesarla
-    if (img.complete) {
-      const colorThief = new ColorThief();
+    // Asegúrate de que la imagen esté completamente cargada y tenga dimensiones válidas antes de procesarla
+    if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      try {
+        const colorThief = new ColorThief();
 
-      // Extrae una paleta de colores de la imagen (toma 10 colores)
-      const palette = colorThief.getPalette(img, 10); // Cambia el valor para obtener más o menos colores
+        // Extrae una paleta de colores de la imagen (toma 10 colores)
+        const palette = colorThief.getPalette(img, 10);
+        if (!palette || !palette.length) return;
 
-      console.log("Color palette:", palette);
+        console.log("Color palette:", palette);
 
-      // Calcula el promedio de los colores extraídos
-      let r = 0,
-        g = 0,
-        b = 0;
-      palette.forEach((color) => {
-        r += color[0];
-        g += color[1];
-        b += color[2];
-      });
+        // Calcula el promedio de los colores extraídos
+        let r = 0,
+          g = 0,
+          b = 0;
+        palette.forEach((color) => {
+          r += color[0];
+          g += color[1];
+          b += color[2];
+        });
 
-      const averageColor = [
-        Math.floor(r / palette.length),
-        Math.floor(g / palette.length),
-        Math.floor(b / palette.length),
-      ];
+        const averageColor = [
+          Math.floor(r / palette.length),
+          Math.floor(g / palette.length),
+          Math.floor(b / palette.length),
+        ];
 
-      console.log("Average color:", averageColor);
+        console.log("Average color:", averageColor);
 
-      // Aplica el color promedio como fondo
-      const playerCard = document.getElementById("playerCard");
-      if (playerCard) {
-        playerCard.style.backgroundColor = `rgb(${averageColor.join(
-          ","
-        )}, 0.7)`;
+        // Aplica el color promedio como fondo
+        const playerCard = document.getElementById("playerCard");
+        if (playerCard) {
+          playerCard.style.backgroundColor = `rgb(${averageColor.join(
+            ","
+          )}, 0.7)`;
+        }
+      } catch (err) {
+        console.warn("ColorThief palette extraction skipped:", err.message);
       }
-    } else {
+    } else if (img && !img.complete) {
       // Si la imagen no está cargada, vuelve a intentarlo
-      img.onload = updatePlayerBgColor; // Espera hasta que la imagen cargue completamente
+      img.onload = updatePlayerBgColor;
       img.onerror = function () {
-        console.error("Error loading image.");
+        console.error("Error loading image for ColorThief.");
       };
     }
   }

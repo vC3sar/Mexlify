@@ -1,5 +1,5 @@
 const DiscordRPC = require("discord-rpc");
-const { app, BrowserWindow, ipcMain, shell, session, dialog, protocol } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, session, dialog, protocol, net } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const sqlite3 = require("sqlite3").verbose();
@@ -8,6 +8,7 @@ const {
   createYtdlpResolver,
   extractVideoId,
 } = require("./services/ytdlpResolver");
+const { initLyricsTable, getSongLyrics } = require("./services/lyricsService");
 // node fetch con required
 const fetch = require("node-fetch");
 // Solo estos cambios mínimos para mejorar sin romper nada
@@ -45,7 +46,12 @@ async function updateActivity(details, state, image, resetTime = false) {
   if (!rpc) return;
   let imgurl = image;
   console.log("Imagen recibida:", image); // <-- Nuevo log
-  if (typeof imgurl == "undefined" || imgurl === null || imgurl === "") {
+  if (
+    typeof imgurl === "undefined" ||
+    imgurl === null ||
+    imgurl === "" ||
+    (typeof imgurl === "string" && (imgurl.startsWith("mexlify://") || imgurl.startsWith("file://")))
+  ) {
     imgurl = "logo_app_mexlify_center";
   }
   try {
@@ -213,6 +219,20 @@ app.setAboutPanelOptions({
   copyright: "© 2025 VAEN Systems",
 });
 
+// ⚠️ DEBE ir antes de app.whenReady()
+// Registra mexlify:// como protocolo seguro para cargar archivos locales de AppData
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'mexlify',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+    },
+  },
+]);
+
 // ==================== SQLite DATABASE SYSTEM ====================
 let db = null;
 
@@ -244,6 +264,8 @@ function initDatabase() {
         } else {
           logDebug("✅ Tabla play_counts verificada/creada.");
         }
+        // Inicializar tabla de caché de letras
+        initLyricsTable(db);
       }
     );
   });
@@ -364,13 +386,21 @@ app.whenReady().then(() => {
   checkYtdlpUpdate(win);
 
   // Registrar protocolo mexlify:// para servir imágenes locales sin bloqueo CSP
-  protocol.handle('mexlify', (request) => {
-    const rawPath = request.url.slice('mexlify://'.length);
-    const filePath = decodeURIComponent(rawPath.replace(/^\/+/, ''));
-    return new Response(
-      require('fs').createReadStream(filePath),
-      { headers: { 'Content-Type': 'image/jpeg' } }
-    );
+  protocol.handle('mexlify', async (request) => {
+    try {
+      let rawPath = decodeURIComponent(request.url.slice('mexlify://'.length));
+      // Fix Chromium converting C:/ into host c/ (e.g. mexlify://c/Users/...)
+      rawPath = rawPath.replace(/^\/?([a-zA-Z])\//, (match, drive) => `${drive.toUpperCase()}:/`);
+      
+      const filePath = path.normalize(rawPath);
+      if (!fs.existsSync(filePath)) {
+        return new Response('File not found', { status: 404 });
+      }
+      return await net.fetch('file:///' + filePath.replace(/\\/g, '/'));
+    } catch (err) {
+      logDebug("Error en protocolo mexlify://", err);
+      return new Response('File not found', { status: 404 });
+    }
   });
 
   setTimeout(async () => {
@@ -400,7 +430,7 @@ const ytdlpResolver = createYtdlpResolver({
   cacheFile: resolverCacheFile,
   cookiesFile: cookiesDestPath,
   concurrency: 2,
-  timeoutMs: 15000,
+  timeoutMs: 35000,
   logger: logDebug,
 });
 
@@ -541,13 +571,12 @@ ipcMain.handle("searchSong", async (event, query) => {
   console.time("searchSong");
   logDebug("Buscando:", query);
 
-  const limit = query.includes(" - ") ? 1 : 3;
+  const limit = 5;
   const normalizedQuery = normalize(query);
 
   try {
     const cachedResults = ytdlpResolver.getCachedSearchResults(normalizedQuery);
     if (cachedResults?.length) {
-      ytdlpResolver.prewarmTracks(cachedResults, 3);
       console.timeEnd("searchSong");
       return cachedResults;
     }
@@ -581,7 +610,7 @@ ipcMain.handle("searchSong", async (event, query) => {
     logDebug("Genre:", genre);
 
     // 2️⃣ Búsqueda con youtube-sr (ULTRA RÁPIDO - reemplaza yt-dlp)
-    const searchResults = await search(`${corrected} official audio`, {
+    const searchResults = await search(corrected, {
       limit: limit,
       type: "video",
       safeSearch: false,
@@ -628,7 +657,6 @@ ipcMain.handle("searchSong", async (event, query) => {
       normalizedQuery,
       filteredResults
     );
-    ytdlpResolver.prewarmTracks(cached, 3);
 
     return cached;
   } catch (err) {
@@ -701,6 +729,43 @@ function resolveDownloadTimestamp(metadata, metadataPath, filePath) {
   return null;
 }
 
+function embedCoverAndMetadata(mp3Path, coverPath, metadataObj = {}, outPath) {
+  return new Promise((resolve) => {
+    if (!fs.existsSync(mp3Path)) return resolve(false);
+    const hasCover = coverPath && fs.existsSync(coverPath);
+
+    const args = ["-y", "-i", mp3Path];
+    if (hasCover) {
+      args.push("-i", coverPath);
+      args.push("-map", "0:a", "-map", "1:v");
+      args.push("-c:a", "copy", "-c:v", "mjpeg");
+      args.push("-id3v2_version", "3");
+      args.push("-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)");
+    } else {
+      args.push("-c:a", "copy");
+      args.push("-id3v2_version", "3");
+    }
+
+    if (metadataObj.title && metadataObj.title !== "N/A") {
+      args.push("-metadata", "title=" + metadataObj.title);
+    }
+    if (metadataObj.artist && metadataObj.artist !== "N/A") {
+      args.push("-metadata", "artist=" + metadataObj.artist);
+    }
+
+    args.push(outPath);
+
+    const proc = spawn(getFfmpegPath(), args, { windowsHide: true });
+    proc.on("close", (code) => {
+      resolve(code === 0);
+    });
+    proc.on("error", (err) => {
+      console.error("Error al incrustar carátula en MP3:", err);
+      resolve(false);
+    });
+  });
+}
+
 ipcMain.handle("downloadSong", async (event, song) => {
   try {
     // Validar datos
@@ -749,18 +814,37 @@ ipcMain.handle("downloadSong", async (event, song) => {
     
     // Descargar miniatura para disponibilidad offline
     let localThumbnail = song.thumbnail || "N/A";
+    let downloadedImgPath = null;
     if (song.thumbnail && song.thumbnail.startsWith("http")) {
       try {
-        const imgPath = path.join(metadataDir, `${safeTitle}.jpg`);
+        downloadedImgPath = path.join(metadataDir, `${safeTitle}.jpg`);
         const response = await fetch(song.thumbnail);
         if (response.ok) {
           const buffer = await response.arrayBuffer();
-          fs.writeFileSync(imgPath, Buffer.from(buffer));
+          fs.writeFileSync(downloadedImgPath, Buffer.from(buffer));
           // Usar protocolo mexlify:// en lugar de file:// para evitar bloqueo CSP
-          localThumbnail = 'mexlify://' + imgPath.replace(/\\/g, '/');
+          localThumbnail = 'mexlify:///' + downloadedImgPath.replace(/\\/g, '/');
         }
       } catch (e) {
         console.error("Error al descargar thumbnail:", e);
+      }
+    }
+
+    // Incrustar la carátula y metadatos ID3v2 directamente dentro del archivo MP3
+    if (downloadedImgPath && fs.existsSync(downloadedImgPath)) {
+      try {
+        const tempTaggedPath = path.join(downloadsDir, `temp_${Date.now()}_${safeTitle}.mp3`);
+        const embedOk = await embedCoverAndMetadata(outputPath, downloadedImgPath, {
+          title: song.title,
+          artist: song.uploader || ""
+        }, tempTaggedPath);
+        if (embedOk && fs.existsSync(tempTaggedPath)) {
+          fs.unlinkSync(outputPath);
+          fs.renameSync(tempTaggedPath, outputPath);
+          logDebug("Carátula y metadatos incrustados exitosamente en:", safeTitle);
+        }
+      } catch (embErr) {
+        console.error("Error al incrustar carátula en MP3:", embErr);
       }
     }
 
@@ -836,6 +920,33 @@ ipcMain.handle("getDownloaded", async () => {
         downloadedAtMs,
       };
     });
+
+    // También incluir cualquier mp3 en downloads que no tenga archivo .txt
+    const allMp3s = fs.readdirSync(downloadsDir).filter((f) => f.endsWith(".mp3"));
+    const knownMp3s = new Set(downloaded.map((d) => d.Filename || d.filename));
+    for (const mp3 of allMp3s) {
+      if (!knownMp3s.has(mp3)) {
+        const base = path.basename(mp3, ".mp3");
+        let artist = "N/A";
+        let title = base;
+        if (base.includes(" - ")) {
+          const parts = base.split(" - ");
+          artist = parts[0].trim();
+          title = parts.slice(1).join(" - ").trim();
+        }
+        const filePath = path.join(downloadsDir, mp3);
+        const stat = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+        downloaded.push({
+          Title: title,
+          Uploader: artist,
+          Filename: mp3,
+          Thumbnail: "resources/player.gif",
+          Duration: "0",
+          downloadedAt: stat ? new Date(stat.mtimeMs).toISOString() : null,
+          downloadedAtMs: stat ? stat.mtimeMs : Date.now(),
+        });
+      }
+    }
 
     downloaded.sort((a, b) => {
       const aTime = a.downloadedAtMs;
@@ -940,15 +1051,24 @@ ipcMain.handle("get-app-path", async (event, filename) => {
   return downloadsDir; // solo la carpeta
 });
 
-ipcMain.handle("exportDownloadsToZip", async (event) => {
+ipcMain.handle("exportDownloadsToZip", async (event, selectedFilenames) => {
   const win = BrowserWindow.getFocusedWindow();
   
   if (!fs.existsSync(downloadsDir)) {
     return { success: false, error: "No tienes canciones descargadas para exportar." };
   }
-  const files = fs.readdirSync(downloadsDir).filter(f => f.endsWith(".mp3"));
+  let files = fs.readdirSync(downloadsDir).filter((f) => f.endsWith(".mp3"));
   if (files.length === 0) {
     return { success: false, error: "No tienes canciones descargadas para exportar." };
+  }
+
+  // Filtrar solo las canciones seleccionadas por el usuario si se proporcionan
+  if (Array.isArray(selectedFilenames) && selectedFilenames.length > 0) {
+    const selectedSet = new Set(selectedFilenames);
+    files = files.filter((f) => selectedSet.has(f));
+    if (files.length === 0) {
+      return { success: false, error: "Ninguna de las canciones seleccionadas está disponible." };
+    }
   }
 
   const { filePath } = await dialog.showSaveDialog(win, {
@@ -966,13 +1086,227 @@ ipcMain.handle("exportDownloadsToZip", async (event) => {
   try {
     const AdmZip = require("adm-zip");
     const zip = new AdmZip();
-    
-    zip.addLocalFolder(downloadsDir);
+    const tempFilesToClean = [];
+    const successfullyExportedTracks = [];
+    const totalFiles = files.length;
+    let processedIndex = 0;
+
+    logDebug(`Iniciando exportación de ${totalFiles} canciones con carátulas ID3...`);
+
+    for (const file of files) {
+      processedIndex++;
+      const baseName = path.basename(file, ".mp3");
+      const mp3Path = path.join(downloadsDir, file);
+      const coverPath = path.join(metadataDir, `${baseName}.jpg`);
+      const txtPath = path.join(metadataDir, `${baseName}.txt`);
+
+      let parsedMeta = {};
+      let meta = { title: baseName, artist: "", album: "", duration: 0 };
+      if (fs.existsSync(txtPath)) {
+        try {
+          const metaContent = fs.readFileSync(txtPath, "utf-8");
+          parsedMeta = parseMetadataFile(metaContent);
+          if (parsedMeta.Title && parsedMeta.Title !== "N/A") meta.title = parsedMeta.Title;
+          if (parsedMeta.Uploader && parsedMeta.Uploader !== "N/A") meta.artist = parsedMeta.Uploader;
+          if (parsedMeta.Album && parsedMeta.Album !== "N/A") meta.album = parsedMeta.Album;
+          if (parsedMeta.Duration && parsedMeta.Duration !== "N/A") meta.duration = parseInt(parsedMeta.Duration, 10) || 0;
+        } catch {}
+      }
+
+      // Si no hay archivo txt, deducir Artista y Título del nombre si contiene ' - '
+      if (!meta.artist && baseName.includes(' - ')) {
+        const parts = baseName.split(' - ');
+        meta.artist = parts[0].trim();
+        meta.title = parts.slice(1).join(' - ').trim();
+      }
+
+      const songDisplayName = meta.artist ? `${meta.title} — ${meta.artist}` : meta.title;
+      const progressPercent = Math.min(95, Math.round((processedIndex / (totalFiles + 1)) * 100));
+
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("export-progress", {
+          current: processedIndex,
+          total: totalFiles,
+          songTitle: songDisplayName,
+          percent: progressPercent,
+          phase: "embedding"
+        });
+      }
+
+      let addedToZip = false;
+
+      // Si existe carátula en metadata/, usarla; si no, usar logo.png como fallback elegante
+      const defaultLogo = path.join(__dirname, 'logo.png');
+      const finalCoverPath = fs.existsSync(coverPath)
+        ? coverPath
+        : (fs.existsSync(defaultLogo) ? defaultLogo : null);
+
+      if (finalCoverPath) {
+        const tempTaggedPath = path.join(downloadsDir, `export_temp_${Date.now()}_${baseName}.mp3`);
+        const taggedOk = await embedCoverAndMetadata(mp3Path, finalCoverPath, meta, tempTaggedPath);
+        if (taggedOk && fs.existsSync(tempTaggedPath)) {
+          zip.addLocalFile(tempTaggedPath, "", `${baseName}.mp3`);
+          addedToZip = true;
+          // Si el archivo local no estaba ocupado, actualizarlo para que ya tenga carátula incrustada
+          try {
+            fs.unlinkSync(mp3Path);
+            fs.renameSync(tempTaggedPath, mp3Path);
+          } catch {
+            tempFilesToClean.push(tempTaggedPath);
+          }
+        }
+      }
+
+      // Fallback si no hay carátula o si falló el empaquetado
+      if (!addedToZip && fs.existsSync(mp3Path)) {
+        zip.addLocalFile(mp3Path, "", `${baseName}.mp3`);
+        addedToZip = true;
+      }
+
+      if (addedToZip) {
+        // Extraer identificador de la fuente (Spotify, YouTube, local)
+        let trackSource = "mexlify";
+        let trackId = `mexlify:local:${baseName}`;
+        if (parsedMeta.SpotifyUri && parsedMeta.SpotifyUri.startsWith("spotify:track:")) {
+          trackSource = "spotify";
+          trackId = parsedMeta.SpotifyUri;
+        } else if (parsedMeta.VideoId && parsedMeta.VideoId !== "N/A") {
+          trackSource = "youtube";
+          trackId = `youtube:${parsedMeta.VideoId}`;
+        } else if (parsedMeta.Url && parsedMeta.Url !== "N/A") {
+          const ytMatch = parsedMeta.Url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([0-9A-Za-z_-]{11})/);
+          if (ytMatch) {
+            trackSource = "youtube";
+            trackId = `youtube:${ytMatch[1]}`;
+          }
+        }
+
+        const artistList = meta.artist
+          ? meta.artist.split(/,\s*|\s*&\s*|\s*ft\.\s*|\s*feat\.\s*/i).map(a => a.trim()).filter(Boolean)
+          : ["Desconocido"];
+
+        successfullyExportedTracks.push({
+          id: trackId,
+          source: trackSource,
+          title: meta.title,
+          artists: artistList.length > 0 ? artistList : [meta.artist || "Desconocido"],
+          album: meta.album || undefined,
+          durationMs: meta.duration ? meta.duration * 1000 : undefined,
+          filename: file
+        });
+      }
+    }
+
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("export-progress", {
+        current: totalFiles,
+        total: totalFiles,
+        songTitle: "Comprimiendo archivo ZIP...",
+        percent: 98,
+        phase: "zipping"
+      });
+    }
+
+    // Escribir archivo ZIP
     zip.writeZip(filePath);
 
-    return { success: true, path: filePath };
+    // Limpiar archivos temporales generados
+    for (const tempFile of tempFilesToClean) {
+      try {
+        if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+      } catch {}
+    }
+
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("export-progress", {
+        current: totalFiles,
+        total: totalFiles,
+        songTitle: "¡Exportación finalizada con éxito!",
+        percent: 100,
+        phase: "done"
+      });
+    }
+
+    logDebug("Exportación a ZIP completada con éxito en:", filePath);
+    return {
+      success: true,
+      path: filePath,
+      exportedTracks: successfullyExportedTracks,
+      totalExported: successfullyExportedTracks.length
+    };
   } catch (err) {
     console.error("Error al exportar ZIP:", err);
     return { success: false, error: err.message };
   }
 });
+
+// Guardar archivo .mexref (Mexlify References)
+ipcMain.handle("save-mexref-file", async (event, payload) => {
+  const win = BrowserWindow.getFocusedWindow();
+  const defaultName = (payload && payload.defaultName) ? payload.defaultName : "mexlify-export";
+  const content = payload ? payload.content : {};
+
+  const { filePath } = await dialog.showSaveDialog(win, {
+    title: "Guardar referencias Mexlify (.mexref)",
+    defaultPath: path.join(app.getPath("desktop"), `${defaultName}.mexref`),
+    filters: [
+      { name: "Mexlify References (*.mexref)", extensions: ["mexref"] }
+    ]
+  });
+
+  if (!filePath) {
+    return { success: false, cancelled: true };
+  }
+
+  try {
+    const jsonStr = typeof content === "string" ? content : JSON.stringify(content, null, 2);
+    fs.writeFileSync(filePath, jsonStr, "utf-8");
+    return { success: true, path: filePath };
+  } catch (err) {
+    console.error("Error al guardar archivo .mexref:", err);
+    return { success: false, error: err.message };
+  }
+});
+
+// Leer archivos .mexref para importación y exclusión
+ipcMain.handle("read-mexref-files", async (event) => {
+  const win = BrowserWindow.getFocusedWindow();
+  const { filePaths, canceled } = await dialog.showOpenDialog(win, {
+    title: "Seleccionar archivos de referencias (.mexref)",
+    properties: ["openFile", "multiSelections"],
+    filters: [
+      { name: "Mexlify References (*.mexref)", extensions: ["mexref"] }
+    ]
+  });
+
+  if (canceled || !filePaths || filePaths.length === 0) {
+    return { success: false, cancelled: true };
+  }
+
+  try {
+    const results = [];
+    for (const fp of filePaths) {
+      const raw = fs.readFileSync(fp, "utf-8");
+      results.push({
+        filePath: fp,
+        fileName: path.basename(fp),
+        content: raw
+      });
+    }
+    return { success: true, files: results };
+  } catch (err) {
+    console.error("Error al leer archivos .mexref:", err);
+    return { success: false, error: err.message };
+  }
+});
+
+// ==================== LYRICS SYSTEM (LRCLIB + SQLite Cache) ====================
+ipcMain.handle("get-lyrics", async (_event, songParams) => {
+  try {
+    return await getSongLyrics(db, songParams);
+  } catch (err) {
+    console.error("❌ Error en get-lyrics handler:", err);
+    return { success: false, notAvailable: true, message: err.message };
+  }
+});
+
