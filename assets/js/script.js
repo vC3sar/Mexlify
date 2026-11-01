@@ -27,6 +27,8 @@ const fcp_repeatBtn = document.getElementById("fcp_repeatBtn");
 const shuffleBtn = document.getElementById("shuffleBtn");
 const fcp_shuffleBtn = document.getElementById("fcp_shuffleBtn");
 const progressBar = document.getElementById("progressBar");
+const reproduciendoTextContainer = document.querySelector(".reproduciendo-text-container");
+const reproduciendoText = document.getElementById("reproduciendoText");
 const fcpProgressBar = document.getElementById("fcp-progressbar");
 const currentTimeEl = document.getElementById("currentTime");
 const fcpCurrentTimeEl = document.getElementById("fcp-time");
@@ -41,6 +43,8 @@ const searchTab = document.getElementById("searchTab");
 const downloadsTab = document.getElementById("downloadsTab");
 const searchContainer = document.getElementById("searchContainer");
 const downloadsContainer = document.getElementById("downloadsContainer");
+const defaultRegionalHeader = document.getElementById("defaultRegionalHeader");
+const playAllRegionalBtn = document.getElementById("playAllRegionalBtn");
 const queueTabButton = document.getElementById("queueTabButton");
 const queueTab = document.getElementById("queuetab");
 const queueCountBadge = document.getElementById("queueCountBadge");
@@ -136,6 +140,23 @@ function showPlayerStatus(message) {
   }
 }
 
+function setPlaybackBadgeState(state) {
+  const container = reproduciendoTextContainer || document.querySelector(".reproduciendo-text-container");
+  const textEl = reproduciendoText || document.getElementById("reproduciendoText");
+  if (!container || !textEl) return;
+
+  if (state === "obtaining") {
+    textEl.textContent = "OBTENIENDO";
+    container.classList.add("active");
+  } else if (state === "playing") {
+    textEl.textContent = "REPRODUCIENDO";
+    container.classList.add("active");
+  } else if (state === "paused" || state === "stopped" || state === "hidden") {
+    container.classList.remove("active");
+    textEl.textContent = "REPRODUCIENDO";
+  }
+}
+
 function cleanSongTitle(title) {
   return title
     .replace(
@@ -221,6 +242,7 @@ async function playSong(song, isDownloaded = false, forceIndex = -1) {
   // Si es una canción distinta, la nueva sesión toma el control inmediatamente
   const sessionToken = ++currentResolveSession;
   currentlyResolvingSong = song;
+  setPlaybackBadgeState("obtaining");
 
   try {
     // Limpiar controlador dinámico de topSongs
@@ -313,6 +335,7 @@ async function playSong(song, isDownloaded = false, forceIndex = -1) {
       currentAudio.pause();
       currentAudio.removeAttribute("src");
     }
+    setPlaybackBadgeState("obtaining");
 
     if (song?.filename?.includes(".mp3")) {
       isDownloaded = true;
@@ -324,6 +347,7 @@ async function playSong(song, isDownloaded = false, forceIndex = -1) {
       const resolvedUrl = await resolveSongOnlineUrl(song);
       if (sessionToken !== currentResolveSession) return;
       if (!resolvedUrl) {
+        setPlaybackBadgeState("stopped");
         showPlayerStatus("No se encontró audio");
         new Notify({
           status: "error",
@@ -368,6 +392,7 @@ async function playSong(song, isDownloaded = false, forceIndex = -1) {
       }
 
       if (!streamUrl) {
+        setPlaybackBadgeState("stopped");
         showPlayerStatus("Audio no disponible");
         new Notify({
           status: "warning",
@@ -686,6 +711,11 @@ function updateRepeatUI() {
   });
 }
 
+function updateQueueUI() {
+  renderQueue();
+}
+window.updateQueueUI = updateQueueUI;
+
 function renderQueue() {
   const queueElement = document.getElementById("queueList");
   if (!queueElement) return;
@@ -944,92 +974,65 @@ async function loadDownloaded() {
     return;
   }
 
-  downloaded.forEach((song) => {
+  downloaded.forEach((song, idx) => {
     const li = document.createElement("li");
-    const thumbnail = song.Thumbnail || "default-thumbnail.png";
-    const duration = song.Duration
-      ? `${Math.floor(song.Duration / 60)}:${String(
-          song.Duration % 60
+    const thumbnail = song.Thumbnail || song.thumbnail || "default-thumbnail.png";
+    const durRaw = song.Duration || song.duration;
+    const duration = durRaw
+      ? `${Math.floor(durRaw / 60)}:${String(
+          durRaw % 60
         ).padStart(2, "0")}`
       : "N/A";
 
     li.innerHTML = `
-      <img src="${thumbnail}" alt="Thumbnail" onerror="this.onerror=null; this.src='resources/player.gif';">
+      <img src="${thumbnail}" alt="Thumbnail" class="play-downloaded-thumb" style="cursor: pointer;" onerror="this.onerror=null; this.src='resources/player.gif';">
       <div class="song-info">
-        <b>${song.Title || "Título desconocido"}</b><br>
-        ${song.Uploader || "Artista desconocido"} (${duration})
+        <b style="cursor: pointer;" class="play-downloaded-title">${song.Title || song.title || "Título desconocido"}</b><br>
+        ${song.Uploader || song.uploader || "Artista desconocido"} (${duration})
       </div>
       <div class="song-actions">
-        <button class="play">Reproducir</button>
+        <button class="play playbtn" title="Reproducir"><i class="ph ph-play"></i> Reproducir</button>
         <button class="queue" title="Añadir a la cola"><i class="ph ph-list-plus"></i></button>
         <button class="add-to-playlist" title="Añadir a playlist"><i class="ph ph-folder-plus"></i></button>
-        <button class="deleteThis"><i class="ph ph-trash"></i></button>
+        <button class="deleteThis" title="Eliminar descarga"><i class="ph ph-trash"></i></button>
       </div>
     `;
     downloadsList.appendChild(li);
 
-    li.querySelector(".play").addEventListener("click", async (e) => {
-      const btn = e.currentTarget;
-
-      // si ya está bloqueado -> no ejecutar
-      if (btn.dataset.locked === "true") {
-        console.log("⏳ Este botón está bloqueado...");
-        new Notify({
-          status: "warning",
-          title: "Espera...",
-          text: "La reproducción es automática, espera un momento.",
-          effect: "fade",
-          speed: 300,
-          customClass: "",
-          customIcon: "",
-          showIcon: true,
-          showCloseButton: true,
-          autoclose: true,
-          autotimeout: 3000,
-          notificationsGap: null,
-          notificationsPadding: null,
-          type: "outline",
-          position: "right top",
-          customWrapper: "",
-        });
-        btn.disabled = true;
-        return; // ⬅️ aquí se detiene
-      }
-
-      // bloquear
-      btn.dataset.locked = "true";
-      //btn.disabled = true;
-      console.log("▶️ Botón bloqueado por 5s");
-
+    const playDownloadedTrack = async () => {
+      // Reemplazar la cola con todas las descargas y olvidar la sección previa
+      queue = downloaded.map((s) => ({
+        title: s.Title || s.title,
+        uploader: s.Uploader || s.uploader,
+        duration: s.Duration || s.duration,
+        filename: s.Filename || s.filename,
+        thumbnail: s.Thumbnail || s.thumbnail || "resources/player.gif",
+        url: s.Url || s.url || null,
+      }));
+      currentIndex = idx;
+      saveQueueToStorage();
+      renderQueue();
       try {
-        playSong(
-          {
-            title: song.Title,
-            uploader: song.Uploader,
-            duration: song.Duration,
-            filename: song.Filename,
-            thumbnail: song.Thumbnail,
-          },
-          true
-        );
+        await playSong(queue[currentIndex], true, currentIndex);
       } catch (err) {
-        console.error("❌ Error en playSong:", err);
+        console.error("❌ Error en playSong (descargas):", err);
       }
+      highlightPlayingSong();
+    };
 
-      // desbloquear a los 5s
-      setTimeout(() => {
-        btn.dataset.locked = "false";
-        btn.disabled = false;
-        console.log("✅ Botón desbloqueado");
-      }, 5000);
-    });
+    li.querySelector(".play").addEventListener("click", playDownloadedTrack);
+    const thumbImg = li.querySelector(".play-downloaded-thumb");
+    if (thumbImg) thumbImg.addEventListener("click", playDownloadedTrack);
+    const titleLink = li.querySelector(".play-downloaded-title");
+    if (titleLink) titleLink.addEventListener("click", playDownloadedTrack);
+
     li.querySelector(".queue").addEventListener("click", () => {
       addToQueue(song, true);
     });
     li.querySelector(".deleteThis").addEventListener("click", async () => {
       try {
-        await window.electronAPI.deleteDownload(song.Filename);
-        debugLog(`Eliminada descarga: ${song.Title}`);
+        await window.electronAPI.deleteDownload(song.Filename || song.filename);
+        debugLog(`Eliminada descarga: ${song.Title || song.title}`);
         await loadDownloaded();
       } catch (err) {
         debugLog("Error eliminando descarga:", err);
@@ -1038,11 +1041,11 @@ async function loadDownloaded() {
     });
     li.querySelector(".add-to-playlist").addEventListener("click", () => {
       openPlaylistModal({
-        title: song.Title,
-        uploader: song.Uploader,
-        duration: song.Duration,
-        thumbnail: song.Thumbnail,
-        filename: song.Filename,
+        title: song.Title || song.title,
+        uploader: song.Uploader || song.uploader,
+        duration: song.Duration || song.duration,
+        thumbnail: thumbnail,
+        filename: song.Filename || song.filename,
         url: null
       });
     });
@@ -1054,6 +1057,7 @@ async function loadDownloaded() {
 async function searchSongDirectPlay(query = "") {
   const genreEl = document.getElementById("songGenre");
   const searchResultsHeader = document.getElementById("searchResultsHeader");
+  if (defaultRegionalHeader) defaultRegionalHeader.style.display = "none";
   navigateTo("search");
 
   if (!query) {
@@ -1197,6 +1201,304 @@ async function searchSongDirectPlay(query = "") {
   }
 }
 
+
+// ======= Canciones Mexicanas / Región México Predeterminadas =======
+const DEFAULT_MEXICAN_TRACKS = [
+  { title: "Volver Al Futuro", uploader: "Oscar Maydon & Junior H", duration: 204, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/8d/76/23/8d762346-51e2-ebc7-fead-2a78c334f1dc/196872148862.jpg/600x600bb.jpg" },
+  { title: "Diamantes", uploader: "Natanael Cano", duration: 211, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/05/24/4c/05244c75-15f5-3a22-5c3b-835fb254ad04/190296646058.jpg/600x600bb.jpg" },
+  { title: "El Azul", uploader: "Junior H & Peso Pluma", duration: 187, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/92/c3/76/92c376a9-5571-132b-2d3d-f18cf7cb367b/5054197559709.jpg/600x600bb.jpg" },
+  { title: "Disfruto Lo Malo", uploader: "Natanael Cano", duration: 187, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/f9/75/58/f97558cf-9cce-0923-42df-196cc93c901a/050742369545_cover.jpg/600x600bb.jpg" },
+  { title: "EXCESOS", uploader: "Fuerza Regida", duration: 187, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/21/e3/b7/21e3b74f-571b-07ce-567b-a2aa8274c7b2/196871548922.jpg/600x600bb.jpg" },
+  { title: "Morena", uploader: "Neton Vega & Peso Pluma", duration: 194, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/bf/b8/7b/bfb87bdf-9da6-880f-0fca-f74f22135f5b/1963622918315_cover.jpg/600x600bb.jpg" },
+  { title: "TÚ NAME", uploader: "Fuerza Regida", duration: 152, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/7c/4f/f5/7c4ff5aa-cf91-1fa1-e630-f8faee15a45b/198391799738.jpg/600x600bb.jpg" },
+  { title: "Si No Quieres No", uploader: "Luis R Conriquez & Neton Vega", duration: 147, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/55/79/cb/5579cb20-b8ec-b14e-9824-37059711c210/198500201990.jpg/600x600bb.jpg" },
+  { title: "Ella Baila Sola", uploader: "Eslabon Armado & Peso Pluma", duration: 165, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/ce/eb/65/ceeb65bb-d130-1b77-50a8-b983aa68b4ad/196871141383.jpg/600x600bb.jpg" },
+  { title: "PRC", uploader: "Peso Pluma & Natanael Cano", duration: 184, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/5c/58/fc/5c58fcbe-dfb4-b040-e1c3-294715f487e4/197187843467.jpg/600x600bb.jpg" },
+  { title: "AMG", uploader: "Natanael Cano, Peso Pluma & Gabito Ballesteros", duration: 174, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music112/v4/cb/2d/7e/cb2d7e5b-ef02-550f-e23a-f4efb85ce4fc/197187427490.jpg/600x600bb.jpg" },
+  { title: "Que Vuelvas", uploader: "Carin Leon & Grupo Frontera", duration: 169, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music112/v4/d9/b4/4d/d9b44d32-d1be-4976-b631-15b22304ce3d/197187214731.jpg/600x600bb.jpg" },
+  { title: "Ch y la Pizza", uploader: "Fuerza Regida & Natanael Cano", duration: 136, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/a4/d8/9e/a4d89e47-a843-02f0-7bfa-fc2ee87e7be2/197187647898.jpg/600x600bb.jpg" },
+  { title: "Fin de Semana", uploader: "Junior H & Oscar Maydon", duration: 211, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/15/d4/06/15d4061a-0724-4fec-d8ee-626a57639f40/197187978275.jpg/600x600bb.jpg" },
+  { title: "Harley Quinn", uploader: "Fuerza Regida & Marshmello", duration: 143, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/6e/b1/d5/6eb1d5f2-95f1-3315-7798-8b9eb5c17d7e/197189196554.jpg/600x600bb.jpg" },
+  { title: "La Diabla", uploader: "Xavi", duration: 172, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/80/7e/40/807e408c-8f96-30ea-6101-38290e29b136/198391394148.jpg/600x600bb.jpg" },
+  { title: "LADY GAGA", uploader: "Peso Pluma, Gabito Ballesteros & Junior H", duration: 212, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/91/ee/30/91ee304c-d1f0-dbe9-798c-ec8df7262d9c/197189035655.jpg/600x600bb.jpg" },
+  { title: "El Color de Tus Ojos", uploader: "Banda MS de Sergio Lizárraga", duration: 203, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/33/c4/1d/33c41d1a-f761-0b5c-fc02-0e42d765e94b/191773721381.jpg/600x600bb.jpg" },
+  { title: "Primera Cita", uploader: "Carin Leon", duration: 184, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/95/92/ff/9592ff33-f7ce-00a4-37ce-4bb9ca7eb2a2/197188734771.jpg/600x600bb.jpg" },
+  { title: "Ya Superame", uploader: "Grupo Firme", duration: 199, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/93/bf/82/93bf8223-9568-d010-0938-f58c741e5e6e/196292523293.jpg/600x600bb.jpg" },
+  { title: "No Se Va", uploader: "Grupo Frontera", duration: 193, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/ea/91/92/ea919246-86d1-417e-c350-a1bd74f46ff7/196925501866.jpg/600x600bb.jpg" },
+  { title: "De Los Besos Que Te Di", uploader: "Christian Nodal", duration: 167, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/96/60/eb/9660ebfe-659f-d30e-56e2-2a62d7a96452/19UMGIM22361.rgb.jpg/600x600bb.jpg" },
+  { title: "Nunca Es Suficiente", uploader: "Los Ángeles Azules & Natalia Lafourcade", duration: 265, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/48/4f/72/484f728c-bfd3-0ec5-8ee0-2e0e4952077e/886447063462.jpg/600x600bb.jpg" },
+  { title: "Labios Rotos", uploader: "Zoé", duration: 251, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/80/7e/6e/807e6e58-e325-1317-a00d-5872719d3ee7/5099909772251.jpg/600x600bb.jpg" }
+];
+
+let defaultMexicanSongsList = [];
+window.defaultMexicanSongsList = defaultMexicanSongsList;
+
+function createSongListItem(song, options = {}) {
+  const li = document.createElement("li");
+  const formattedDuration = song.duration
+    ? (typeof song.duration === "number"
+        ? `${Math.floor(song.duration / 60)}:${String(song.duration % 60).padStart(2, "0")}`
+        : (String(song.duration).includes(":") ? song.duration : `${song.duration}s`))
+    : "";
+  const durationText = formattedDuration ? `(${formattedDuration})` : "";
+  const rankHtml = options.rank ? `<span class="top-chart-rank" style="min-width: 28px; font-weight: 800; color: rgba(255, 255, 255, 0.45); font-family: Poppins, sans-serif; font-size: 0.95rem; text-align: center;">${options.rank}</span>` : "";
+  const playCountBadge = (options.playCount !== undefined && options.playCount !== null)
+    ? `<span class="song-play-count-badge" title="${options.playCount} reproducciones"><i class="ph-fill ph-headphones"></i> ${options.playCount} ${options.playCount === 1 ? 'reprod.' : 'reprods.'}</span>`
+    : "";
+  const cleanTitle = (typeof cleanSongTitle === "function") ? cleanSongTitle(song.title) : song.title;
+  li.innerHTML = `
+    ${rankHtml}
+    <img class="play" src="${song.thumbnail || 'resources/player.gif'}" onerror="this.onerror=null; this.src='resources/player.gif';">
+    <div class="song-info">
+        <b>${cleanTitle}</b>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span>${song.uploader} ${durationText}</span>
+            ${playCountBadge}
+        </div>
+    </div>
+    <div class="song-actions">
+        <button class="playbtn" title="Reproducir"><i class="ph ph-play"></i></button>
+        <button class="download downloadButton" title="Descargar"><i class="ph ph-download-simple"></i></button>
+        <button class="queue" title="Añadir a la cola"><i class="ph ph-list-plus"></i></button>
+        <button class="add-to-playlist" title="Añadir a playlist"><i class="ph ph-folder-plus"></i></button>
+    </div>
+  `;
+
+  li.querySelector(".play").addEventListener("click", () => playSong(song));
+
+  li.querySelector(".playbtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (btn.dataset.locked === "true") {
+      new Notify({
+        status: "warning",
+        title: "Espera...",
+        text: "La reproducción es automática, espera un momento.",
+        effect: "fade",
+        speed: 300,
+        showIcon: true,
+        showCloseButton: true,
+        autoclose: true,
+        autotimeout: 3000,
+        type: "outline",
+        position: "right top",
+      });
+      return;
+    }
+    btn.dataset.locked = "true";
+    setTimeout(() => {
+      btn.dataset.locked = "false";
+      btn.disabled = false;
+    }, 5000);
+
+    try {
+      await playSong(song);
+    } catch (err) {
+      console.error("Error en playSong:", err);
+    }
+  });
+
+  const downloadBtn = li.querySelector(".download");
+  downloadBtn.addEventListener("click", async () => {
+    if (downloadBtn.disabled) return;
+    downloadBtn.disabled = true;
+    downloadBtn.style.opacity = "0.6";
+    await new Notify({
+      status: "info",
+      title: "Descargando...",
+      text: `"${song.title}"`,
+      effect: "fade",
+    });
+    debugLog("Iniciando descarga de:", song.title);
+    if (window.systemTray) {
+      window.systemTray.addMessage("Descarga", `Descargando: ${song.title}`, "info");
+    }
+    try {
+      if (!song.url && !song.filename) {
+        showPlayerStatus("Buscando enlace de audio...");
+        await resolveSongOnlineUrl(song);
+      }
+      const res = await window.electronAPI.downloadSong(song);
+      if (res.success) {
+        if (res.alreadyExists) {
+          debugLog(`La canción ya existe: ${song.title}`);
+          if (window.systemTray) {
+            window.systemTray.addMessage("Descarga", `La canción ya existe: ${song.title}`, "warning");
+          }
+          setTimeout(() => {
+            new Notify({
+              status: "warning",
+              title: "Descarga existente",
+              text: `"${song.title}"`,
+              effect: "fade",
+            });
+          }, 1000);
+        } else {
+          debugLog(`Descarga completada: ${song.title}`);
+          if (window.systemTray) {
+            window.systemTray.addMessage("Descarga", `Descarga completada: ${song.title}`, "success");
+          }
+          new Notify({
+            status: "success",
+            title: "Descarga completada",
+            text: `"${song.title}"`,
+            effect: "fade",
+          });
+        }
+        await loadDownloaded();
+      } else {
+        debugLog(`Error descargando ${song.title}: ${res.error}`);
+        if (window.systemTray) {
+          window.systemTray.addMessage("Descarga", `Error al descargar ${song.title}: ${res.error}`, "error");
+        }
+        alert(`Error descargando ${song.title}: ${res.error}`);
+      }
+    } catch (err) {
+      debugLog("Error en download listener:", err);
+      if (window.systemTray) {
+        window.systemTray.addMessage("Descarga", `Error inesperado al descargar ${song.title}`, "error");
+      }
+      alert(`Error inesperado descargando ${song.title}`);
+    } finally {
+      downloadBtn.disabled = false;
+      downloadBtn.style.opacity = "1";
+    }
+  });
+
+  li.querySelector(".queue").addEventListener("click", () => addToQueue(song));
+  li.querySelector(".add-to-playlist").addEventListener("click", () => {
+    openPlaylistModal({
+      title: song.title,
+      uploader: song.uploader,
+      duration: song.duration,
+      thumbnail: song.thumbnail,
+      url: song.url || song.webpage_url || null,
+      filename: null
+    });
+  });
+
+  return li;
+}
+
+async function loadDefaultMexicanMusic() {
+  if (searchInput && searchInput.value.trim().length > 0) {
+    return;
+  }
+  const searchResultsHeader = document.getElementById("searchResultsHeader");
+  if (searchResultsHeader) searchResultsHeader.style.display = "none";
+  if (defaultRegionalHeader) defaultRegionalHeader.style.display = "flex";
+
+  // Intentar cargar de caché local para rapidez instantánea
+  if (!defaultMexicanSongsList || defaultMexicanSongsList.length === 0) {
+    try {
+      const cached = localStorage.getItem("mexlify_top_mexico_cache");
+      if (cached) {
+        defaultMexicanSongsList = JSON.parse(cached);
+        window.defaultMexicanSongsList = defaultMexicanSongsList;
+      }
+    } catch (e) {
+      console.warn("Error leyendo caché de top México:", e);
+    }
+  }
+
+  // Si no hay aún, usar la lista curada predeterminada
+  if (!defaultMexicanSongsList || defaultMexicanSongsList.length === 0) {
+    defaultMexicanSongsList = [...DEFAULT_MEXICAN_TRACKS];
+    window.defaultMexicanSongsList = defaultMexicanSongsList;
+  }
+
+  // Renderizar
+  resultsList.innerHTML = "";
+  defaultMexicanSongsList.forEach((song, idx) => {
+    const li = createSongListItem(song);
+    const playHandler = async () => {
+      queue = defaultMexicanSongsList.map((s) => ({ ...s }));
+      currentIndex = idx;
+      saveQueueToStorage();
+      renderQueue();
+      await playSong(queue[currentIndex], !!queue[currentIndex].filename, currentIndex);
+      highlightPlayingSong();
+    };
+    const origPlayBtn = li.querySelector(".playbtn");
+    const origImg = li.querySelector(".play");
+    const titleLink = li.querySelector(".song-info b");
+    if (origPlayBtn) {
+      origPlayBtn.replaceWith(origPlayBtn.cloneNode(true));
+      li.querySelector(".playbtn").addEventListener("click", playHandler);
+    }
+    if (origImg) {
+      origImg.replaceWith(origImg.cloneNode(true));
+      li.querySelector(".play").addEventListener("click", playHandler);
+    }
+    if (titleLink) {
+      titleLink.style.cursor = "pointer";
+      titleLink.addEventListener("click", playHandler);
+    }
+    resultsList.appendChild(li);
+  });
+  highlightPlayingSong();
+
+  // En segundo plano, buscar tendencias frescas de México
+  fetchFreshMexicanMusic();
+}
+
+async function fetchFreshMexicanMusic() {
+  try {
+    const res = await fetch("https://itunes.apple.com/search?term=Regional+Mexicano&country=MX&entity=song&limit=30");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.results && data.results.length > 0) {
+      const freshTracks = data.results.map((r) => ({
+        title: r.trackName,
+        uploader: r.artistName,
+        duration: Math.round((r.trackTimeMillis || 0) / 1000),
+        thumbnail: r.artworkUrl100 ? r.artworkUrl100.replace("100x100bb", "600x600bb") : "resources/player.gif",
+        url: null,
+        filename: null
+      }));
+      defaultMexicanSongsList = freshTracks;
+      window.defaultMexicanSongsList = freshTracks;
+      try {
+        localStorage.setItem("mexlify_top_mexico_cache", JSON.stringify(freshTracks));
+      } catch (e) {}
+
+      // Si el buscador sigue vacío, actualizar suavemente
+      if (searchInput && searchInput.value.trim().length === 0 && (!searchResultsHeader || searchResultsHeader.style.display === "none")) {
+        resultsList.innerHTML = "";
+        defaultMexicanSongsList.forEach((song, idx) => {
+          const li = createSongListItem(song);
+          const playHandler = async () => {
+            queue = defaultMexicanSongsList.map((s) => ({ ...s }));
+            currentIndex = idx;
+            saveQueueToStorage();
+            renderQueue();
+            await playSong(queue[currentIndex], !!queue[currentIndex].filename, currentIndex);
+            highlightPlayingSong();
+          };
+          const origPlayBtn = li.querySelector(".playbtn");
+          const origImg = li.querySelector(".play");
+          const titleLink = li.querySelector(".song-info b");
+          if (origPlayBtn) {
+            origPlayBtn.replaceWith(origPlayBtn.cloneNode(true));
+            li.querySelector(".playbtn").addEventListener("click", playHandler);
+          }
+          if (origImg) {
+            origImg.replaceWith(origImg.cloneNode(true));
+            li.querySelector(".play").addEventListener("click", playHandler);
+          }
+          if (titleLink) {
+            titleLink.style.cursor = "pointer";
+            titleLink.addEventListener("click", playHandler);
+          }
+          resultsList.appendChild(li);
+        });
+        highlightPlayingSong();
+      }
+    }
+  } catch (err) {
+    console.warn("No se pudo obtener el top fresco de México:", err);
+  }
+}
+
 let isSearchingSongs = false;
 
 async function searchSongs() {
@@ -1222,6 +1524,7 @@ async function searchSongs() {
   navigateTo("search");
 
   const searchResultsHeader = document.getElementById("searchResultsHeader");
+  if (defaultRegionalHeader) defaultRegionalHeader.style.display = "none";
   resultsList.innerHTML = `
     <div class="search-loading-state" style="padding: 40px 20px; text-align: center; color: rgba(255, 255, 255, 0.7); display: flex; flex-direction: column; align-items: center; gap: 12px;">
       <i class="ph ph-spinner ph-spin" style="font-size: 2.2rem; color: #ff0090;"></i>
@@ -1432,28 +1735,48 @@ class ITunesSearch {
 // Crear instancia
 const itunes = new ITunesSearch();
 
-// Función principal
+// Función principal para mostrar recomendaciones con diseño Liquid Glass
 async function showArtistRecommendations(artistName) {
   const container = document.getElementById("artistRecommends");
-  if (!container) return;
-  container.innerHTML = "";
+  if (!container || !artistName || artistName.trim().length === 0 || artistName.trim() === "Artista") return;
 
-  const h3 = document.createElement("h3");
-  h3.textContent = `Recomendaciones para ${artistName}`;
-  container.appendChild(h3);
+  const cleanArtist = artistName.trim();
+  container.classList.add("is-visible");
+  container.innerHTML = `
+    <div class="ListHeader recommends-header">
+      <div class="header-title-group">
+        <h2><i class="ph-fill ph-sparkle" style="color: #ff0090; margin-right: 6px;"></i>Recomendaciones</h2>
+        <span class="stat-badge" id="recommendsArtistBadge">${cleanArtist}</span>
+      </div>
+      <div class="header-actions-group">
+        <button id="closeRecommendsBtn" class="changeBg" style="padding: 6px 14px; font-size: 0.85rem;" title="Ocultar recomendaciones">
+          <i class="ph ph-x"></i> Ocultar
+        </button>
+      </div>
+    </div>
+    <div class="recommends-loading" style="padding: 24px; text-align: center; color: rgba(255, 255, 255, 0.65); display: flex; align-items: center; justify-content: center; gap: 10px;">
+      <i class="ph ph-spinner ph-spin" style="font-size: 1.5rem; color: #ff0090;"></i>
+      <span>Buscando canciones similares de ${cleanArtist}...</span>
+    </div>
+  `;
 
-  const ul = document.createElement("ul");
+  document.getElementById("closeRecommendsBtn")?.addEventListener("click", () => {
+    container.classList.remove("is-visible");
+    container.innerHTML = "";
+  });
+
   const seenIds = new Set();
-
-  // ===== 1. Buscar nombre correcto del artista =====
-  let artistResults = [];
+  const cleanFirstArtist = cleanArtist.split(/[,&]/)[0].trim();
   const queries = [
-    artistName,
-    artistName.split(" ").slice(0, 2).join(" "),
-    artistName.split(" ")[0],
+    cleanFirstArtist,
+    cleanArtist,
+    cleanFirstArtist.split(" ").slice(0, 2).join(" "),
+    cleanFirstArtist.split(" ")[0],
   ];
 
+  let artistResults = [];
   for (const query of queries) {
+    if (!query) continue;
     const results = await itunes.searchArtistName(query);
     if (results && results.length > 0) {
       artistResults = results;
@@ -1461,54 +1784,136 @@ async function showArtistRecommendations(artistName) {
     }
   }
 
-  if (artistResults.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "Artista no encontrado en iTunes.";
-    ul.appendChild(li);
-    container.appendChild(ul);
-    return;
-  }
+  const artistCorrectName = (artistResults.length > 0) ? artistResults[0].artistName : cleanFirstArtist;
 
-  const artistCorrectName = artistResults[0].artistName;
-
-  // ===== 2. Buscar canciones del artista correcto =====
+  // Buscar canciones del artista correcto
   let trackResults = [];
   const trackData = await itunes.searchTracks(artistCorrectName, 20);
   if (trackData.results && trackData.results.length > 0) {
     trackResults = trackData.results;
   }
 
+  const loadingEl = container.querySelector(".recommends-loading");
+  if (loadingEl) loadingEl.remove();
+
   if (trackResults.length === 0) {
-    const li = document.createElement("li");
-    li.textContent = "No se encontraron canciones del artista.";
-    ul.appendChild(li);
-    container.appendChild(ul);
+    container.innerHTML = `
+      <div class="ListHeader recommends-header">
+        <div class="header-title-group">
+          <h2><i class="ph-fill ph-sparkle" style="color: #ff0090; margin-right: 6px;"></i>Recomendaciones</h2>
+          <span class="stat-badge">${cleanArtist}</span>
+        </div>
+        <div class="header-actions-group">
+          <button id="closeRecommendsBtn" class="changeBg" style="padding: 6px 14px; font-size: 0.85rem;" title="Ocultar recomendaciones">
+            <i class="ph ph-x"></i> Ocultar
+          </button
+        </div>
+      </div>
+      <div class="messages-empty-state" style="padding: 24px 16px; text-align: center; color: rgba(255, 255, 255, 0.65);">
+        <i class="ph ph-sparkle" style="font-size: 2rem; color: rgba(255, 0, 144, 0.4); margin-bottom: 6px; display: block;"></i>
+        <span>No se encontraron recomendaciones disponibles para este artista.</span>
+      </div>
+    `;
+    document.getElementById("closeRecommendsBtn")?.addEventListener("click", () => {
+      container.classList.remove("is-visible");
+      container.innerHTML = "";
+    });
     return;
   }
 
-  // ===== 3. Mostrar tracks =====
+  // Actualizar encabezado con botón de reproducción rápida
+  const headerActions = container.querySelector(".header-actions-group");
+  if (headerActions) {
+    headerActions.innerHTML = `
+      <button id="playMixRecommendsBtn" class="changeBg" style="padding: 6px 14px; font-size: 0.85rem;" title="Reproducir primera recomendación">
+        <i class="ph-fill ph-play"></i> Reproducir mix
+      </button>
+      <button id="closeRecommendsBtn" class="changeBg" style="padding: 6px 14px; font-size: 0.85rem;" title="Ocultar recomendaciones">
+        <i class="ph ph-x"></i> Ocultar
+      </button>
+    `;
+  }
+
+  document.getElementById("closeRecommendsBtn")?.addEventListener("click", () => {
+    container.classList.remove("is-visible");
+    container.innerHTML = "";
+  });
+
+  const ul = document.createElement("ul");
+  ul.className = "recommends-list";
+
   trackResults.forEach((track) => {
     if (seenIds.has(track.trackId)) return;
     seenIds.add(track.trackId);
 
     const li = document.createElement("li");
+    li.className = "recommend-song-item";
     li.setAttribute("data-id", track.trackId);
-    li.style.cursor = "pointer";
 
-    li.addEventListener("click", () => {
-      const query = `${track.artistName} ${track.trackName}`;
-      searchSongDirectPlay(query);
-    });
+    const artwork = (track.artworkUrl100 || track.artworkUrl60 || "")
+      .replace(/\/\d+x\d+bb\./, "/200x200bb.") || "resources/player.gif";
+    const durSec = Math.round((track.trackTimeMillis || 0) / 1000);
+    const durText = durSec > 0 ? `(${formatTime(durSec)})` : "";
+    const cleanTitle = (typeof cleanSongTitle === "function") ? cleanSongTitle(track.trackName) : track.trackName;
 
     li.innerHTML = `
-      <img src="${track.artworkUrl60}" alt="${track.trackName} cover" onerror="this.onerror=null; this.src='resources/player.gif';" />
-      <strong>${track.trackName}</strong> - ${track.artistName} 
+      <span class="recommend-rank-icon"><i class="ph-fill ph-sparkle"></i></span>
+      <img class="recommend-thumb" src="${artwork}" alt="${track.trackName} cover" onerror="this.onerror=null; this.src='resources/player.gif';" />
+      <div class="song-info">
+        <b>${cleanTitle}</b>
+        <span>${track.artistName} ${durText}</span>
+      </div>
+      <div class="song-actions">
+        <button class="playbtn" title="Reproducir"><i class="ph ph-play"></i></button>
+        <button class="queue" title="Añadir a la cola"><i class="ph ph-list-plus"></i></button>
+        <button class="add-to-playlist" title="Añadir a playlist"><i class="ph ph-folder-plus"></i></button>
+      </div>
     `;
+
+    const playThisRecommendation = () => {
+      const query = `${track.artistName} ${track.trackName}`;
+      searchSongDirectPlay(query);
+    };
+
+    li.querySelector(".playbtn").addEventListener("click", playThisRecommendation);
+    li.querySelector(".recommend-thumb").addEventListener("click", playThisRecommendation);
+    li.querySelector(".song-info b").addEventListener("click", playThisRecommendation);
+
+    li.querySelector(".queue").addEventListener("click", (e) => {
+      e.stopPropagation();
+      addToQueue({
+        title: track.trackName,
+        uploader: track.artistName,
+        thumbnail: artwork,
+        duration: durSec,
+        url: null,
+        filename: null
+      });
+    });
+
+    li.querySelector(".add-to-playlist").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openPlaylistModal({
+        title: track.trackName,
+        uploader: track.artistName,
+        duration: durSec,
+        thumbnail: artwork,
+        url: null,
+        filename: null
+      });
+    });
 
     ul.appendChild(li);
   });
 
   container.appendChild(ul);
+
+  document.getElementById("playMixRecommendsBtn")?.addEventListener("click", () => {
+    const firstItem = ul.querySelector(".recommend-song-item");
+    if (firstItem) {
+      firstItem.querySelector(".playbtn")?.click();
+    }
+  });
 }
 
 // ======= iTunes y funciones aleatorias =======
@@ -1587,16 +1992,24 @@ player.addEventListener("loadstart", () => {
 });
 
 player.addEventListener("canplay", () => {
+  clearTimeout(waitingBufferingTimeout);
   debugLog("Audio: canplay");
 });
 
 player.addEventListener("playing", () => {
+  clearTimeout(waitingBufferingTimeout);
   debugLog("Audio: playing");
 });
 
+let waitingBufferingTimeout = null;
 player.addEventListener("waiting", () => {
-  debugLog("Audio: waiting");
-  showPlayerStatus("Reintentando conexión...");
+  debugLog("Audio: waiting / buffering");
+  clearTimeout(waitingBufferingTimeout);
+  waitingBufferingTimeout = setTimeout(() => {
+    if (player.paused || player.readyState < 3) {
+      showPlayerStatus("Reintentando conexión...");
+    }
+  }, 2800);
 });
 
 player.addEventListener("ended", () => {
@@ -1612,8 +2025,9 @@ player.addEventListener("ended", () => {
     "https://i.ibb.co/CKrdcJTT/logo-app-mexlify-center.png";
   playPauseBtn.innerHTML = '<i class="ph ph-play"></i>';
   fcp_playPauseBtn.innerHTML = '<i class="ph ph-play"></i>';
-  const repText = document.querySelector('.reproduciendo-text-container');
-  if (repText) repText.classList.remove('active');
+  if (!currentlyResolvingSong) {
+    setPlaybackBadgeState("stopped");
+  }
   if (!isRepeating && repeatMode === "off") currentAudio = null;
   progressBar.value = 0;
   progressBar.style.setProperty('--value', '0%');
@@ -1649,6 +2063,16 @@ player.addEventListener("loadedmetadata", () => {
   fcpTotalTimeEl.textContent = formatTime(player.duration);
 });
 
+player.addEventListener("playing", () => {
+  setPlaybackBadgeState("playing");
+});
+
+player.addEventListener("waiting", () => {
+  if (currentlyResolvingSong || player.paused || player.currentTime === 0) {
+    setPlaybackBadgeState("obtaining");
+  }
+});
+
 progressBar.addEventListener("input", () => {
   if (!player.duration) return;
   progressBar.style.setProperty('--value', `${progressBar.value}%`);
@@ -1663,8 +2087,7 @@ fcpProgressBar.addEventListener("input", () => {
 player.addEventListener("play", () => {
   playPauseBtn.innerHTML = '<i class="ph ph-pause"></i>';
   fcp_playPauseBtn.innerHTML = '<i class="ph ph-pause"></i>';
-  const repText = document.querySelector('.reproduciendo-text-container');
-  if (repText) repText.classList.add('active');
+  setPlaybackBadgeState("playing");
   setTimeout(async () => {
     const dur = (!isNaN(player.duration) && player.duration > 0) ? player.duration : (currentSong?.duration || 0);
     await window.electronAPI.setDiscordActivity(
@@ -1689,8 +2112,9 @@ player.addEventListener("pause", () => {
   }, 5 * 1000);
   playPauseBtn.innerHTML = '<i class="ph ph-play"></i>';
   fcp_playPauseBtn.innerHTML = '<i class="ph ph-play"></i>';
-  const repText = document.querySelector('.reproduciendo-text-container');
-  if (repText) repText.classList.remove('active');
+  if (!currentlyResolvingSong) {
+    setPlaybackBadgeState("paused");
+  }
 });
 
 let lastDisplayedSecond = -1;
@@ -1735,9 +2159,33 @@ player.addEventListener("error", (e) => {
   if (!audioError) return;
   switch (audioError.code) {
     case MediaError.MEDIA_ERR_ABORTED:
-    case MediaError.MEDIA_ERR_NETWORK:
-      debugLog("Audio: Error ignorado temporal", audioError);
+      debugLog("Audio: Carga abortada intencionalmente");
       break;
+    case MediaError.MEDIA_ERR_NETWORK: {
+      debugLog("Audio: Error de red detectado (posible ERR_CONNECTION_RESET), recuperando...", audioError);
+      // Auto-reconexión fluida si la conexión con googlevideo se interrumpió
+      if (currentSong && !currentSong.isDownloaded && player.currentTime > 0) {
+        const resumePosition = player.currentTime;
+        showPlayerStatus("Reanudando conexión de audio...");
+        setTimeout(async () => {
+          try {
+            const freshUrl = await window.electronAPI.streamSong(currentSong);
+            if (freshUrl) {
+              player.src = freshUrl;
+              player.currentTime = resumePosition;
+              player.play().catch(debugLog);
+            } else {
+              player.load();
+              player.currentTime = resumePosition;
+              player.play().catch(debugLog);
+            }
+          } catch (recErr) {
+            debugLog("Error al recuperar stream:", recErr);
+          }
+        }, 800);
+      }
+      break;
+    }
     case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
       if (player.src === "" || !player.src) {
         debugLog("Audio: src vacío o no soportado", audioError);
@@ -1768,6 +2216,7 @@ if (searchClearBtn) {
     searchInput.value = "";
     searchClearBtn.classList.add("is-hidden");
     searchInput.focus();
+    loadDefaultMexicanMusic();
   });
 }
 
@@ -1779,6 +2228,7 @@ searchInput.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     searchInput.value = "";
     if (searchClearBtn) searchClearBtn.classList.add("is-hidden");
+    loadDefaultMexicanMusic();
   }
 });
 
@@ -1786,7 +2236,50 @@ searchInput.addEventListener("input", () => {
   if (searchClearBtn) {
     searchClearBtn.classList.toggle("is-hidden", searchInput.value.length === 0);
   }
+  if (searchInput.value.trim().length === 0) {
+    loadDefaultMexicanMusic();
+  }
 });
+
+if (playAllRegionalBtn) {
+  playAllRegionalBtn.addEventListener("click", async () => {
+    if (!defaultMexicanSongsList || defaultMexicanSongsList.length === 0) {
+      defaultMexicanSongsList = [...DEFAULT_MEXICAN_TRACKS];
+    }
+    queue = defaultMexicanSongsList.map((s) => ({ ...s }));
+    renderQueue();
+    currentIndex = 0;
+    new Notify({
+      status: "info",
+      title: "Tendencias en México",
+      text: `Reproduciendo ${queue.length} canciones del Top México.`,
+      effect: "fade",
+      autotimeout: 3000
+    });
+    await playSong(queue[0]);
+  });
+}
+
+const shuffleRegionalBtn = document.getElementById("shuffleRegionalBtn");
+if (shuffleRegionalBtn) {
+  shuffleRegionalBtn.addEventListener("click", async () => {
+    if (!defaultMexicanSongsList || defaultMexicanSongsList.length === 0) {
+      defaultMexicanSongsList = [...DEFAULT_MEXICAN_TRACKS];
+    }
+    const shuffled = [...defaultMexicanSongsList].sort(() => Math.random() - 0.5);
+    queue = shuffled.map((s) => ({ ...s }));
+    renderQueue();
+    currentIndex = 0;
+    new Notify({
+      status: "info",
+      title: "Tendencias en México (Aleatorio)",
+      text: `Reproduciendo ${queue.length} canciones mezcladas.`,
+      effect: "fade",
+      autotimeout: 3000
+    });
+    await playSong(queue[0]);
+  });
+}
 
 [playPauseBtn, fcp_playPauseBtn].forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1863,26 +2356,105 @@ searchInput.addEventListener("input", () => {
   });
 });
 
-const volumeSliders = [fcp_volumeSlider, volumeSlider];
+// ======= Ajustes de Sensibilidad de Volumen (Touchpad y Ratón) =======
+let touchpadSensFactor = parseFloat(localStorage.getItem("mexlify_touchpad_sens")) || 0.035;
+let mouseWheelSensFactor = parseFloat(localStorage.getItem("mexlify_mouse_sens")) || 0.04;
 
-volumeSliders.forEach((slider) => {
-  slider.addEventListener("wheel", function (event) {
+function initAccessibilitySettings() {
+  const touchpadInput = document.getElementById("touchpadSensitivity");
+  const touchpadValueLabel = document.getElementById("touchpadSensitivityValue");
+  const mouseInput = document.getElementById("mouseWheelSensitivity");
+  const mouseValueLabel = document.getElementById("mouseWheelSensitivityValue");
+  const resetBtn = document.getElementById("resetSensitivityBtn");
+
+  if (touchpadInput && touchpadValueLabel) {
+    touchpadInput.value = touchpadSensFactor;
+    touchpadValueLabel.textContent = (touchpadSensFactor * 100).toFixed(1);
+
+    touchpadInput.addEventListener("input", (e) => {
+      touchpadSensFactor = parseFloat(e.target.value);
+      touchpadValueLabel.textContent = (touchpadSensFactor * 100).toFixed(1);
+      localStorage.setItem("mexlify_touchpad_sens", touchpadSensFactor);
+    });
+  }
+
+  if (mouseInput && mouseValueLabel) {
+    mouseInput.value = mouseWheelSensFactor;
+    mouseValueLabel.textContent = (mouseWheelSensFactor * 100).toFixed(1);
+
+    mouseInput.addEventListener("input", (e) => {
+      mouseWheelSensFactor = parseFloat(e.target.value);
+      mouseValueLabel.textContent = (mouseWheelSensFactor * 100).toFixed(1);
+      localStorage.setItem("mexlify_mouse_sens", mouseWheelSensFactor);
+    });
+  }
+
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      touchpadSensFactor = 0.035;
+      mouseWheelSensFactor = 0.04;
+      localStorage.setItem("mexlify_touchpad_sens", touchpadSensFactor);
+      localStorage.setItem("mexlify_mouse_sens", mouseWheelSensFactor);
+
+      if (touchpadInput && touchpadValueLabel) {
+        touchpadInput.value = touchpadSensFactor;
+        touchpadValueLabel.textContent = (touchpadSensFactor * 100).toFixed(1);
+      }
+      if (mouseInput && mouseValueLabel) {
+        mouseInput.value = mouseWheelSensFactor;
+        mouseValueLabel.textContent = (mouseWheelSensFactor * 100).toFixed(1);
+      }
+
+      if (window.systemTray) {
+        window.systemTray.addMessage("Accesibilidad", "Sensibilidad de volumen restablecida a los valores predeterminados.", "info");
+      }
+    });
+  }
+}
+
+const volumeContainers = [
+  document.querySelector(".volume-controls-row"),
+  fcp_volumeSlider ? fcp_volumeSlider.parentElement : null,
+  volumeSlider,
+  fcp_volumeSlider
+].filter(Boolean);
+
+// Escuchar wheel en sliders y en el contenedor del volumen para facilitar el gesto en touchpad
+const boundVolumeElements = new Set(volumeContainers);
+boundVolumeElements.forEach((el) => {
+  el.addEventListener("wheel", function (event) {
     event.preventDefault();
 
-    const step = 0.1; // Sensibilidad del scroll
-    let value = parseFloat(this.value);
+    // Soportar tanto scroll vertical como horizontal del touchpad
+    const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? -event.deltaY : event.deltaX;
+    if (delta === 0) return;
 
-    if (event.deltaY < 0) {
-      // Scroll arriba: sube volumen
-      value = Math.min(value + step, parseFloat(this.max));
+    // Sensibilidad calibrada para touchpad y rueda de ratón (ajustable en Ajustes > Accesibilidad):
+    // deltaMode 0: píxeles (touchpad o ratones de alta resolución)
+    // deltaMode 1: líneas (ratón convencional)
+    // deltaMode 2: páginas
+    let change = 0;
+    if (event.deltaMode === 1) {
+      change = (delta / 3) * mouseWheelSensFactor;
+    } else if (event.deltaMode === 2) {
+      change = delta * mouseWheelSensFactor * 2.5;
     } else {
-      // Scroll abajo: baja volumen
-      value = Math.max(value - step, parseFloat(this.min));
+      // Modo píxeles (típico de touchpads)
+      change = (delta / 120) * touchpadSensFactor;
     }
 
-    this.value = value.toFixed(2);
-    handleVolumeChange({ target: this });
-  });
+    // Limitar el paso máximo por evento según la sensibilidad configurada
+    const maxStep = Math.max(0.04, Math.min(0.15, touchpadSensFactor * 2));
+    change = Math.max(-maxStep, Math.min(maxStep, change));
+
+    let current = parseFloat(volumeSlider.value) || 0;
+    let nextVal = Math.max(0, Math.min(0.95, current + change));
+
+    // Redondear a 4 decimales para mantener fluidez y evitar imprecisión flotante
+    nextVal = Math.round(nextVal * 10000) / 10000;
+
+    handleVolumeChange({ target: { value: nextVal } });
+  }, { passive: false });
 });
 
 function handleVolumeChange(e) {
@@ -1968,10 +2540,16 @@ function navigateTo(view) {
     case "home":
       searchContainer.classList.remove("is-hidden");
       homeTab.classList.add("is-active");
+      if (searchInput && searchInput.value.trim().length === 0 && (!resultsList || resultsList.children.length === 0)) {
+        loadDefaultMexicanMusic();
+      }
       break;
     case "search":
       searchContainer.classList.remove("is-hidden");
       searchTab.classList.add("is-active");
+      if (searchInput && searchInput.value.trim().length === 0 && (!resultsList || resultsList.children.length === 0)) {
+        loadDefaultMexicanMusic();
+      }
       break;
     case "downloads":
       downloadsContainer.classList.remove("is-hidden");
@@ -1988,6 +2566,7 @@ function navigateTo(view) {
       break;
     case "countryTop":
       countryTopContainer.classList.remove("is-hidden");
+      if (homeTab) homeTab.classList.add("is-active");
       break;
     case "recents":
       if (recentsContainer) recentsContainer.classList.remove("is-hidden");
@@ -2006,27 +2585,80 @@ function navigateTo(view) {
       break;
   }
   highlightPlayingSong();
+  scrollToTop(true);
 }
 
+// ======= Función universal para desplazar al top =======
+function scrollToTop(smooth = true) {
+  const behavior = smooth ? "smooth" : "auto";
+  window.scrollTo({ top: 0, left: 0, behavior });
+  if (document.documentElement) document.documentElement.scrollTo({ top: 0, left: 0, behavior });
+  if (document.body) document.body.scrollTo({ top: 0, left: 0, behavior });
+
+  const scrollContainers = [
+    document.getElementById("resultsList"),
+    document.getElementById("downloadsList"),
+    document.getElementById("recentsList"),
+    document.getElementById("country-top-container"),
+    document.getElementById("searchContainer"),
+    document.getElementById("downloadsContainer"),
+    document.getElementById("settings"),
+    document.getElementById("playlistsContainer"),
+    document.querySelector(".top-chart-songs-list"),
+    document.querySelector(".content.glass-box"),
+    document.querySelector(".tab-content"),
+    document.getElementById("homeView")
+  ];
+  scrollContainers.forEach((el) => {
+    if (el) {
+      if (typeof el.scrollTo === "function") {
+        el.scrollTo({ top: 0, left: 0, behavior });
+      }
+      el.scrollTop = 0;
+    }
+  });
+}
+window.scrollToTop = scrollToTop;
+
 // ======= Listeners de navegación (navbar y sidebar) =======
+// Siempre que se toque alguno de los elementos en .nav-right, llevar al top
+document.querySelectorAll(".nav-right a").forEach((link) => {
+  link.addEventListener("click", () => {
+    scrollToTop(true);
+  });
+});
+
+const navTitleEl = document.querySelector(".nav-title");
+if (navTitleEl) {
+  navTitleEl.style.cursor = "pointer";
+  navTitleEl.addEventListener("click", () => {
+    navigateTo("home");
+    scrollToTop(true);
+  });
+}
+
 homeTab.addEventListener("click", (e) => {
   e.preventDefault();
   navigateTo("home");
+  scrollToTop(true);
 });
 
 searchTab.addEventListener("click", (e) => {
   e.preventDefault();
   navigateTo("search");
+  scrollToTop(true);
 });
 
 downloadsTab.addEventListener("click", (e) => {
   e.preventDefault();
   navigateTo("downloads");
+  scrollToTop(true);
 });
 
 settingsTabButton.addEventListener("click", (e) => {
   e.preventDefault();
   navigateTo("settings");
+  scrollToTop(true);
 });
 
 if (recentsTab) {
@@ -2151,24 +2783,251 @@ if (closeQueueBtn) closeQueueBtn.addEventListener("click", closeQueueDrawer);
 // Clic en el overlay cierra el drawer
 if (queueOverlay) queueOverlay.addEventListener("click", closeQueueDrawer);
 
-// ======= renderCountryTop =======
-function renderCountryTop() {
-  navigateTo("countryTop");
-  countryTopContainer.innerHTML = "<p>Cargando top del país...</p>";
-  countryTopContainer.scrollIntoView({ behavior: "smooth" });
+
+// ======= Curated Global Fallback Tracks =======
+const DEFAULT_GLOBAL_TRACKS = [
+  { title: "Thriller", uploader: "Michael Jackson", duration: 357, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/32/4f/fd/324ffda2-9e51-8f6a-0c2d-c6fd2b41ac55/074643811224.jpg/600x600bb.png" },
+  { title: "Monster Mash", uploader: "Bobby Boris Pickett & The Crypt-Kickers", duration: 194, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/96/4e/2e/964e2e34-975a-f9da-ea23-326fdce09941/07UMGIM07880.rgb.jpg/600x600bb.png" },
+  { title: "Choosin' Texas", uploader: "Ella Langley", duration: 188, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/e2/91/4d/e2914d0a-7f1d-f04c-fbf4-c50b38548838/196873638690.jpg/600x600bb.png" },
+  { title: "Ghostbusters", uploader: "Ray Parker Jr.", duration: 245, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/9a/70/43/9a704362-976d-ec4b-0367-54d368cb0ef8/886445902204.jpg/600x600bb.png" },
+  { title: "Lies (feat. Lana Del Rey)", uploader: "Zach Bryan & Lana Del Rey", duration: 236, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/ea/98/f2/ea98f2b8-5131-29ae-2064-997234ef13bc/093624812647.jpg/600x600bb.png" },
+  { title: "Patient Zero", uploader: "Taylor Swift", duration: 215, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/a0/dd/fd/a0ddfd72-ee9e-f046-6466-a5dbefc696fa/26UM1IM21436.rgb.jpg/600x600bb.png" },
+  { title: "POKITO", uploader: "Daddy Yankee & Diljit Dosanjh", duration: 180, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/24/2a/a4/242aa4a9-808f-419f-289c-e7e6a1517c08/4593106.jpg/600x600bb.png" },
+  { title: "ADDICTED", uploader: "JISOO", duration: 198, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/6e/7d/c6/6e7dc611-3961-7a16-58d6-68c567745703/054391222435.jpg/600x600bb.png" },
+  { title: "Housewife", uploader: "Tate McRae", duration: 172, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/ce/c8/05/cec805c6-5f81-a897-a53e-f42025b9cd5a/196874840146.jpg/600x600bb.png" },
+  { title: "Die With A Smile", uploader: "Lady Gaga & Bruno Mars", duration: 251, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/7c/4f/f5/7c4ff5aa-cf91-1fa1-e630-f8faee15a45b/198391799738.jpg/600x600bb.jpg" },
+  { title: "Birds of a Feather", uploader: "Billie Eilish", duration: 194, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/ca/23/20/ca23209c-b8a6-bd08-12f1-14db7396c806/artwork.jpg/600x600bb.png" },
+  { title: "Taste", uploader: "Sabrina Carpenter", duration: 157, thumbnail: "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/cd/92/3f/cd923fbb-21e8-3a9f-fa0f-3c2e47ad4ad1/artwork.jpg/600x600bb.png" }
+];
+
+async function getChartTracks(chartType = "mexico") {
+  const isMexico = chartType.toLowerCase().includes("mex");
+  const cacheKey = isMexico ? "mexlify_top_mexico_full_cache" : "mexlify_top_global_full_cache";
+
+  // 1. Intentar caché local
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        fetchAndCacheChart(chartType, cacheKey).catch(() => {});
+        return parsed;
+      }
+    }
+  } catch (e) {}
+
+  // 2. Fetch en vivo desde iTunes RSS
+  try {
+    const fetched = await fetchAndCacheChart(chartType, cacheKey);
+    if (fetched && fetched.length > 0) return fetched;
+  } catch (e) {
+    console.warn("Error obteniendo chart en vivo:", e);
+  }
+
+  // 3. Fallback curado
+  return isMexico ? [...DEFAULT_MEXICAN_TRACKS] : [...DEFAULT_GLOBAL_TRACKS];
 }
 
-countryMixbtnA.addEventListener("click", () => {
-  renderCountryTop();
-});
-countryMixbtnB.addEventListener("click", () => {
-  renderCountryTop();
-});
+async function fetchAndCacheChart(chartType, cacheKey) {
+  const isMexico = chartType.toLowerCase().includes("mex");
+  const url = isMexico
+    ? "https://itunes.apple.com/mx/rss/topsongs/limit=50/json"
+    : "https://itunes.apple.com/us/rss/topsongs/limit=50/json";
 
-document.getElementById("backtop").addEventListener("click", () => {
+  const res = await fetch(url, { signal: AbortSignal.timeout(4500) });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const data = await res.json();
+  const entries = data.feed?.entry || [];
+  if (entries.length === 0) return null;
+
+  const tracks = entries.map((e) => ({
+    title: e["im:name"]?.label || "Título desconocido",
+    uploader: e["im:artist"]?.label || "Artista desconocido",
+    duration: 0,
+    thumbnail: e["im:image"]?.[2]?.label
+      ? e["im:image"][2].label.replace(/\/\d+x\d+bb/, "/600x600bb")
+      : "resources/player.gif",
+    url: null,
+    filename: null
+  }));
+
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify(tracks));
+  } catch (e) {}
+  return tracks;
+}
+
+async function showTopChartList(chartType = "mexico") {
+  const isMexico = chartType.toLowerCase().includes("mex");
   navigateTo("countryTop");
-  countryTopContainer.scrollIntoView({ behavior: "smooth" });
-});
+
+  const container = document.getElementById("country-top-container");
+  if (!container) return;
+
+  const title = isMexico ? "Más escuchadas de México" : "Playlist del Día - Mix Global";
+  const tag = isMexico ? "Top Nacional" : "Mix Global";
+  const desc = isMexico ? "El Top 50 más popular de México" : "Las 50 canciones en tendencia mundial";
+  const coverImg = isMexico ? "assets/top_mexico.jpg" : "assets/top_global.jpg";
+
+  container.innerHTML = `
+    <div class="playlist-detail-topbar" style="margin-bottom: 16px;">
+      <button class="backtop-premium" id="btnBackFromTop" title="Volver a Inicio">
+        <i class="ph ph-arrow-left"></i>
+        <span>Volver a Inicio</span>
+      </button>
+    </div>
+    <div class="top-chart-hero">
+      <img src="${coverImg}" class="top-chart-hero-cover" onerror="this.onerror=null; this.src='resources/player.gif';">
+      <div class="top-chart-hero-info">
+        <span class="vaen-card-tag">${tag}</span>
+        <h2 style="margin: 0; color: #fff; font-size: 1.5rem; font-weight: 800; font-family: Poppins, sans-serif;">${title}</h2>
+        <p style="margin: 0; color: rgba(255, 255, 255, 0.65); font-size: 0.9rem;">${desc}</p>
+        <div class="top-chart-hero-actions">
+          <button id="btnPlayAllChart" class="changeBg" style="padding: 8px 18px; font-weight: 700; margin: 0;">
+            <i class="ph ph-play"></i> Reproducir todo
+          </button>
+          <button id="btnShuffleChart" class="changeBg" style="padding: 8px 18px; font-weight: 700; margin: 0;">
+            <i class="ph ph-shuffle"></i> Mezclar
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="search-loading-state" style="padding: 30px; text-align: center; color: rgba(255, 255, 255, 0.7); display: flex; flex-direction: column; align-items: center; gap: 10px;">
+      <i class="ph ph-spinner ph-spin" style="font-size: 2rem; color: #ff0090;"></i>
+      <span>Cargando canciones...</span>
+    </div>
+    <ul id="topChartSongsList" class="top-chart-songs-list" style="list-style: none; padding: 0; margin: 0;"></ul>
+  `;
+
+  container.scrollIntoView({ behavior: "smooth" });
+
+  document.getElementById("btnBackFromTop")?.addEventListener("click", () => {
+    navigateTo("home");
+    if (typeof scrollToTop === "function") scrollToTop(true);
+  });
+
+  const songs = await getChartTracks(chartType);
+  const loadingEl = container.querySelector(".search-loading-state");
+  if (loadingEl) loadingEl.remove();
+
+  const ul = container.querySelector("#topChartSongsList");
+  if (!ul) return;
+
+  songs.forEach((song, idx) => {
+    const li = createSongListItem(song, { rank: idx + 1 });
+    const playHandler = async () => {
+      queue = songs.map((s) => ({ ...s }));
+      currentIndex = idx;
+      saveQueueToStorage();
+      renderQueue();
+      await playSong(queue[currentIndex], !!queue[currentIndex].filename, currentIndex);
+      highlightPlayingSong();
+    };
+
+    const origPlayBtn = li.querySelector(".playbtn");
+    const origImg = li.querySelector(".play");
+    if (origPlayBtn) {
+      origPlayBtn.replaceWith(origPlayBtn.cloneNode(true));
+      li.querySelector(".playbtn").addEventListener("click", playHandler);
+    }
+    if (origImg) {
+      origImg.replaceWith(origImg.cloneNode(true));
+      li.querySelector(".play").addEventListener("click", playHandler);
+    }
+    const titleLink = li.querySelector(".song-info b");
+    if (titleLink) {
+      titleLink.style.cursor = "pointer";
+      titleLink.addEventListener("click", playHandler);
+    }
+    ul.appendChild(li);
+  });
+
+  container.querySelector("#btnPlayAllChart")?.addEventListener("click", async () => {
+    queue = songs.map((s) => ({ ...s }));
+    currentIndex = 0;
+    renderQueue();
+    new Notify({
+      status: "info",
+      title: title,
+      text: `Reproduciendo ${queue.length} canciones.`,
+      effect: "fade",
+      autotimeout: 3000
+    });
+    await playSong(queue[0]);
+  });
+
+  container.querySelector("#btnShuffleChart")?.addEventListener("click", async () => {
+    const shuffled = [...songs].sort(() => Math.random() - 0.5);
+    queue = shuffled.map((s) => ({ ...s }));
+    currentIndex = 0;
+    renderQueue();
+    new Notify({
+      status: "info",
+      title: `${title} (Aleatorio)`,
+      text: `Reproduciendo ${queue.length} canciones mezcladas.`,
+      effect: "fade",
+      autotimeout: 3000
+    });
+    await playSong(queue[0]);
+  });
+
+  highlightPlayingSong();
+}
+
+async function playTopChart(chartType = "mexico", autoPlay = true) {
+  const isMexico = chartType.toLowerCase().includes("mex");
+  const title = isMexico ? "Más escuchadas de México" : "Playlist del Día - Mix Global";
+
+  new Notify({
+    status: "info",
+    title: title,
+    text: "Cargando canciones para reproducir...",
+    effect: "fade",
+    autotimeout: 2500
+  });
+
+  const songs = await getChartTracks(chartType);
+  if (!songs || songs.length === 0) return;
+
+  queue = songs.map((s) => ({ ...s }));
+  currentIndex = 0;
+  saveQueueToStorage();
+  renderQueue();
+
+  if (autoPlay) {
+    await playSong(queue[0], !!queue[0].filename, 0);
+    highlightPlayingSong();
+  }
+}
+
+window.showTopChartList = showTopChartList;
+window.playTopChart = playTopChart;
+
+// ======= renderCountryTop =======
+function renderCountryTop(countryCode = "mexico") {
+  showTopChartList(countryCode);
+}
+
+if (countryMixbtnA) {
+  countryMixbtnA.addEventListener("click", (e) => {
+    e.stopPropagation();
+    playTopChart("global", true);
+  });
+}
+if (countryMixbtnB) {
+  countryMixbtnB.addEventListener("click", (e) => {
+    e.stopPropagation();
+    playTopChart("mexico", true);
+  });
+}
+
+const backtopBtnEl = document.getElementById("backtop");
+if (backtopBtnEl) {
+  backtopBtnEl.addEventListener("click", () => {
+    navigateTo("countryTop");
+    countryTopContainer.scrollIntoView({ behavior: "smooth" });
+  });
+}
 
 
 
@@ -2242,6 +3101,7 @@ window.electronAPI.onYtdlpUpdate((status) => {
 });
 // ======= Inicializar =======
 loadDownloaded();
+loadDefaultMexicanMusic();
 debugLog("Aplicación iniciada");
 // Opcional: FPS real del renderer
 /*
@@ -2793,6 +3653,16 @@ function openPlaylistDetail(playlistId) {
     }
   }
 
+  if (downloadAllPlaylistBtn) {
+    if (isDownloadingAllPlaylist && downloadingPlaylistId === pl.id) {
+      downloadAllPlaylistBtn.disabled = true;
+      downloadAllPlaylistBtn.innerHTML = downloadAllProgressBtnHTML || `<i class="ph ph-spinner ph-spin"></i> Descargando...`;
+    } else {
+      downloadAllPlaylistBtn.disabled = isDownloadingAllPlaylist;
+      downloadAllPlaylistBtn.innerHTML = `<i class="ph ph-download-simple"></i> Descargar Todo`;
+    }
+  }
+
   // Store current playlist id on the play button
   if (playPlaylistBtn) playPlaylistBtn.dataset.playlistId = playlistId;
 
@@ -2807,7 +3677,7 @@ function openPlaylistDetail(playlistId) {
 }
 
 function playPlaylistSong(playlist, clickedIndex) {
-  // Configurar la cola con todas las canciones de la playlist
+  // Configurar la cola con todas las canciones de la playlist y olvidar la seccion previa
   queue = playlist.songs.map((s) => ({
     title: s.title,
     uploader: s.uploader,
@@ -2817,12 +3687,15 @@ function playPlaylistSong(playlist, clickedIndex) {
     url: s.url || null,
   }));
 
+  currentIndex = clickedIndex;
+  saveQueueToStorage();
   renderQueue();
 
   const song = queue[clickedIndex];
   if (song) {
     playSong(song, !!song.filename, clickedIndex);
   }
+  highlightPlayingSong();
 }
 
 function renderPlaylistSongs(pl, filterQuery = "") {
@@ -2906,6 +3779,11 @@ function renderPlaylistSongs(pl, filterQuery = "") {
     li.querySelector(".playbtn").addEventListener("click", () =>
       playPlaylistSong(pl, origIndex)
     );
+    const plTitleEl = li.querySelector(".song-info b");
+    if (plTitleEl) {
+      plTitleEl.style.cursor = "pointer";
+      plTitleEl.addEventListener("click", () => playPlaylistSong(pl, origIndex));
+    }
     li.querySelector(".queue").addEventListener("click", () =>
       addToQueue(songObj, isLocal)
     );
@@ -3140,7 +4018,7 @@ function pickBestCandidate(candidates, song) {
 }
 
 // ---- Resolutor Robusto de Audio Online para Canciones ----
-async function resolveSongOnlineUrl(song, force = false) {
+async function resolveSongOnlineUrl(song, force = false, excludeVideoId = null) {
   if (!force && (song.url || song.filename)) return song.url || null;
 
   try {
@@ -3165,7 +4043,23 @@ async function resolveSongOnlineUrl(song, force = false) {
     }
 
     if (results && results.length > 0) {
-      const matched = pickBestCandidate(results, song);
+      let candidatePool = results;
+      if (excludeVideoId) {
+        candidatePool = results.filter(
+          (r) => r.videoId !== excludeVideoId && !r.url?.includes(excludeVideoId)
+        );
+        if (candidatePool.length === 0) {
+          // Si el filtro descartó todos, hacer una búsqueda con audio alternativo
+          const audioFallback = await window.electronAPI.searchSong(`${query} audio`);
+          if (audioFallback && audioFallback.length > 0) {
+            candidatePool = audioFallback.filter(
+              (r) => r.videoId !== excludeVideoId && !r.url?.includes(excludeVideoId)
+            );
+          }
+        }
+      }
+
+      const matched = pickBestCandidate(candidatePool.length > 0 ? candidatePool : results, song);
       if (matched) {
         song.url = matched.url || matched.sourceUrl || `https://www.youtube.com/watch?v=${matched.videoId}`;
         song.videoId = matched.videoId;
@@ -3253,11 +4147,141 @@ function shufflePlaylist(playlistId) {
   playSong(queue[0], !!queue[0].filename, 0);
 }
 
-// ---- Descarga completa de Playlist Fuera de Línea (Fase 5) ----
+// ---- Descarga completa de Playlist Fuera de Línea con Control Anti-Sobrecarga ----
 let isDownloadingAllPlaylist = false;
+let downloadingPlaylistId = null;
+let downloadAllProgressBtnHTML = "";
+
+const playlistBatchState = {
+  isPaused: false,
+  isCancelled: false,
+  pauseResolvers: [],
+};
+
+window.playlistDownloadController = {
+  pause() {
+    if (!isDownloadingAllPlaylist || playlistBatchState.isPaused) return;
+    playlistBatchState.isPaused = true;
+    if (window.systemTray && window.systemTray.activeDownloadTask) {
+      window.systemTray.updateDownloadTask({
+        isPaused: true,
+        status: "paused",
+        statusText: "En pausa por el usuario",
+      });
+    }
+  },
+  resume() {
+    if (!isDownloadingAllPlaylist || !playlistBatchState.isPaused) return;
+    playlistBatchState.isPaused = false;
+    while (playlistBatchState.pauseResolvers.length > 0) {
+      const r = playlistBatchState.pauseResolvers.shift();
+      r();
+    }
+    if (window.systemTray && window.systemTray.activeDownloadTask) {
+      window.systemTray.updateDownloadTask({
+        isPaused: false,
+        status: "downloading",
+        statusText: "Reanudando descargas...",
+      });
+    }
+  },
+  togglePause() {
+    if (playlistBatchState.isPaused) {
+      this.resume();
+    } else {
+      this.pause();
+    }
+  },
+  cancel() {
+    if (!isDownloadingAllPlaylist) return;
+    playlistBatchState.isCancelled = true;
+    playlistBatchState.isPaused = false;
+    while (playlistBatchState.pauseResolvers.length > 0) {
+      const r = playlistBatchState.pauseResolvers.shift();
+      r();
+    }
+  },
+};
+
+function updatePlaylistRowDownloadUI(playlistId, origIndex, state) {
+  if (!activePlaylistDetail || activePlaylistDetail.id !== playlistId || !playlistSongsList) return;
+  const row = playlistSongsList.querySelector(`li[data-orig-index="${origIndex}"]`);
+  if (!row) return;
+  const actionsDiv = row.querySelector(".song-actions");
+  if (!actionsDiv) return;
+  const dlBtn = actionsDiv.querySelector(".download-pl");
+
+  if (state === "active") {
+    if (dlBtn) {
+      dlBtn.disabled = true;
+      dlBtn.style.opacity = "0.85";
+      dlBtn.innerHTML = `<i class="ph ph-spinner ph-spin"></i>`;
+      dlBtn.title = "Descargando...";
+    }
+  } else if (state === "done") {
+    const relinkBtn = actionsDiv.querySelector(".relink-pl");
+    if (relinkBtn) relinkBtn.remove();
+    if (dlBtn) {
+      const checkSpan = document.createElement("span");
+      checkSpan.title = "Disponible offline";
+      checkSpan.style.cssText = "color:#00d170; font-size:1.1rem; display:flex; align-items:center;";
+      checkSpan.innerHTML = `<i class="ph ph-check-circle"></i>`;
+      dlBtn.replaceWith(checkSpan);
+    }
+  } else if (state === "error") {
+    if (dlBtn) {
+      dlBtn.disabled = false;
+      dlBtn.style.opacity = "1";
+      dlBtn.innerHTML = `<i class="ph ph-download-simple"></i>`;
+      dlBtn.title = "Reintentar descarga";
+    }
+  }
+}
+
+async function waitIfBatchPausedOrYielding(syncUiCallback) {
+  while (playlistBatchState.isPaused && !playlistBatchState.isCancelled) {
+    await new Promise((resolve) => playlistBatchState.pauseResolvers.push(resolve));
+  }
+  if (playlistBatchState.isCancelled) return false;
+
+  // Priorizar siempre la reproducción de música del usuario:
+  // si el reproductor está resolviendo una canción para reproducir, esperar sin saturar yt-dlp
+  if (typeof isResolvingSong !== "undefined" && isResolvingSong) {
+    if (syncUiCallback) {
+      syncUiCallback("playback-yield", "Priorizando reproducción de música...");
+    }
+    while (typeof isResolvingSong !== "undefined" && isResolvingSong && !playlistBatchState.isCancelled) {
+      await new Promise((r) => setTimeout(r, 450));
+    }
+    // Pequeño margen adicional para que el buffer de audio inicie limpio
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  return !playlistBatchState.isCancelled;
+}
+
+async function sleepInterruptible(ms) {
+  const step = 250;
+  let elapsed = 0;
+  while (elapsed < ms && !playlistBatchState.isCancelled) {
+    if (playlistBatchState.isPaused) {
+      await waitIfBatchPausedOrYielding();
+    }
+    await new Promise((r) => setTimeout(r, Math.min(step, ms - elapsed)));
+    elapsed += step;
+  }
+}
+
 async function downloadAllPlaylist(playlistId) {
   const pl = playlists.find((p) => p.id === playlistId);
-  if (!pl || pl.songs.length === 0 || isDownloadingAllPlaylist) return;
+  if (!pl || pl.songs.length === 0) return;
+
+  if (isDownloadingAllPlaylist) {
+    if (window.systemTray) {
+      window.systemTray.open();
+    }
+    return;
+  }
 
   const unDownloaded = pl.songs.filter((s) => !s.filename);
   if (unDownloaded.length === 0) {
@@ -3271,11 +4295,11 @@ async function downloadAllPlaylist(playlistId) {
   }
 
   const result = await Swal.fire({
-    title: "¿Descargar playlist?",
-    html: `Se descargarán <b>${unDownloaded.length} canciones</b> para escuchar sin conexión.<br><small style="color: #666;">Las canciones se resolverán y descargarán en segundo plano.</small>`,
+    title: `¿Descargar "${pl.name}"?`,
+    html: `Se procesarán <b>${unDownloaded.length} canciones</b> con control inteligente anti-saturación para evitar bloqueos de <code>yt-dlp</code>.<br><small style="color: #888;">Puedes seguir escuchando música con normalidad y ver o pausar el avance desde la Bandeja del Sistema.</small>`,
     icon: "question",
     showCancelButton: true,
-    confirmButtonText: '<i class="ph ph-download-simple"></i> Iniciar descarga',
+    confirmButtonText: '<i class="ph ph-download-simple"></i> Iniciar descarga segura',
     cancelButtonText: "Cancelar",
     confirmButtonColor: "#ff0090",
   });
@@ -3283,26 +4307,111 @@ async function downloadAllPlaylist(playlistId) {
   if (!result.isConfirmed) return;
 
   isDownloadingAllPlaylist = true;
-  if (downloadAllPlaylistBtn) {
-    downloadAllPlaylistBtn.disabled = true;
-    downloadAllPlaylistBtn.innerHTML = `<i class="ph ph-spinner ph-spin"></i> Descargando...`;
+  downloadingPlaylistId = playlistId;
+  playlistBatchState.isPaused = false;
+  playlistBatchState.isCancelled = false;
+  playlistBatchState.pauseResolvers = [];
+
+  const totalCount = unDownloaded.length;
+  let processedCount = 0;
+  let downloadedCount = 0;
+  let cachedCount = 0;
+  let failedCount = 0;
+  let consecutiveNetworkDownloads = 0;
+
+  const updateProgressVisibility = (status, statusText, currentSongTitle = "") => {
+    downloadAllProgressBtnHTML = `<i class="ph ph-spinner ph-spin"></i> Descargando (${processedCount}/${totalCount})`;
+    if (downloadAllPlaylistBtn && activePlaylistDetail && activePlaylistDetail.id === playlistId) {
+      downloadAllPlaylistBtn.disabled = true;
+      downloadAllPlaylistBtn.innerHTML = downloadAllProgressBtnHTML;
+    }
+    if (window.systemTray) {
+      window.systemTray.updateDownloadTask({
+        playlistId,
+        playlistName: pl.name,
+        processedCount,
+        totalCount,
+        downloadedCount,
+        cachedCount,
+        failedCount,
+        currentSongTitle,
+        status,
+        statusText,
+        isPaused: playlistBatchState.isPaused,
+        isFinished: status === "completed" || status === "cancelled",
+      });
+    }
+  };
+
+  if (window.systemTray) {
+    window.systemTray.addMessage(
+      "Descarga Masiva",
+      `Iniciando descarga controlada de ${totalCount} canciones de "${pl.name}".`,
+      "music",
+      false
+    );
   }
+
+  updateProgressVisibility("downloading", "Preparando cola de descarga...", "");
 
   new Notify({
     status: "info",
-    title: "Descarga iniciada",
-    text: `Descargando ${unDownloaded.length} canciones en segundo plano...`,
+    title: "Descarga inteligente iniciada",
+    text: `Descargando ${totalCount} canciones. Abre la Bandeja del Sistema para ver el progreso en vivo.`,
     effect: "fade",
   });
 
-  let downloadedCount = 0;
-  for (const song of unDownloaded) {
-    try {
-      if (!song.url) {
-        await resolveSongOnlineUrl(song);
-      }
+  const BATCH_COOLDOWN_EVERY = 12; // Cada 12 descargas reales de red, pausa preventiva
+  const BATCH_COOLDOWN_SECONDS = 10;
 
-      if (song.url) {
+  for (let i = 0; i < unDownloaded.length; i++) {
+    const song = unDownloaded[i];
+    const origIndex = pl.songs.indexOf(song);
+    const displaySongName = `${song.title}${song.uploader ? " - " + song.uploader : ""}`;
+
+    const canContinue = await waitIfBatchPausedOrYielding((st, txt) =>
+      updateProgressVisibility(st, txt, displaySongName)
+    );
+    if (!canContinue) break;
+
+    updatePlaylistRowDownloadUI(playlistId, origIndex, "active");
+
+    let trackSucceeded = false;
+    let wasAlreadyCached = false;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      if (playlistBatchState.isCancelled) break;
+
+      const okToRun = await waitIfBatchPausedOrYielding((st, txt) =>
+        updateProgressVisibility(st, txt, displaySongName)
+      );
+      if (!okToRun) break;
+
+      try {
+        if (!song.url) {
+          updateProgressVisibility(
+            "resolving",
+            attempt > 1 ? `Reintentando búsqueda (${attempt}/2)...` : "Buscando fuente de audio...",
+            displaySongName
+          );
+          await resolveSongOnlineUrl(song);
+        }
+
+        if (!song.url) {
+          throw new Error("No se encontró URL válida para la pista");
+        }
+
+        const okBeforeDl = await waitIfBatchPausedOrYielding((st, txt) =>
+          updateProgressVisibility(st, txt, displaySongName)
+        );
+        if (!okBeforeDl) break;
+
+        updateProgressVisibility(
+          "downloading",
+          attempt > 1 ? `Reintentando descarga (${attempt}/2)...` : "Descargando audio...",
+          displaySongName
+        );
+
         const res = await window.electronAPI.downloadSong({
           title: song.title,
           uploader: song.uploader,
@@ -3310,34 +4419,165 @@ async function downloadAllPlaylist(playlistId) {
           thumbnail: song.thumbnail,
           url: song.url,
         });
-        if (res.success) {
-          song.filename = res.filename || song.title;
-          downloadedCount++;
-          savePlaylistsToStorage();
-          if (activePlaylistDetail && activePlaylistDetail.id === playlistId) {
-            renderPlaylistSongs(activePlaylistDetail, playlistFilterInput ? playlistFilterInput.value : "");
+
+        if (res && res.success) {
+          const safeFallback = `${song.title.replace(/[<>:"/\\|?*]+/g, "_")}.mp3`;
+          song.filename = res.filename || safeFallback;
+          trackSucceeded = true;
+          wasAlreadyCached = !!res.alreadyExists;
+          break;
+        } else {
+          throw new Error((res && res.error) || "Fallo en yt-dlp");
+        }
+      } catch (err) {
+        const errMsg = String(err?.message || err || "");
+        console.warn(`Intento ${attempt} fallido para "${song.title}":`, errMsg);
+
+        const isAgeOrUnplayable = /sign in|confirm your age|age.?restrict|private video|not available|unplayable/i.test(errMsg);
+        if (isAgeOrUnplayable) {
+          const badVideoId = song.videoId || (song.url ? song.url.match(/(?:v=|\/)([\w-]{11})/)?.[1] : null);
+          song.url = null;
+          song.videoId = null;
+          updateProgressVisibility(
+            "resolving",
+            "Pista con restricción de edad. Buscando versión alternativa...",
+            displaySongName
+          );
+          await resolveSongOnlineUrl(song, true, badVideoId);
+        }
+
+        if (attempt < 2 && !playlistBatchState.isCancelled) {
+          const isRateLimit = /429|too many requests|rate.?limit|bot/i.test(errMsg);
+          const backoffSeconds = isRateLimit ? 20 : (isAgeOrUnplayable ? 3 : 5);
+          for (let sec = backoffSeconds; sec > 0; sec--) {
+            if (playlistBatchState.isCancelled) break;
+            updateProgressVisibility(
+              "cooldown",
+              isAgeOrUnplayable
+                ? `Cambiando a pista alternativa (${sec}s)...`
+                : `Enfriando conexión antes de reintentar (${sec}s)...`,
+              displaySongName
+            );
+            await sleepInterruptible(1000);
           }
         }
       }
-    } catch (err) {
-      console.warn(`Error al descargar "${song.title}":`, err);
     }
-    await new Promise((r) => setTimeout(r, 800));
+
+    if (playlistBatchState.isCancelled) {
+      updatePlaylistRowDownloadUI(playlistId, origIndex, "error");
+      break;
+    }
+
+    processedCount++;
+
+    if (trackSucceeded) {
+      if (wasAlreadyCached) {
+        cachedCount++;
+      } else {
+        downloadedCount++;
+        consecutiveNetworkDownloads++;
+      }
+      savePlaylistsToStorage();
+      updatePlaylistRowDownloadUI(playlistId, origIndex, "done");
+
+      // Actualizar biblioteca offline periódicamente sin saturar disco en cada canción
+      if (downloadedCount > 0 && downloadedCount % 15 === 0) {
+        loadDownloaded().catch(() => {});
+      }
+    } else {
+      failedCount++;
+      updatePlaylistRowDownloadUI(playlistId, origIndex, "error");
+      if (window.systemTray) {
+        window.systemTray.addMessage(
+          "Canción omitida",
+          `No se pudo descargar "${song.title}" tras 2 intentos.`,
+          "warning",
+          true
+        );
+      }
+    }
+
+    updateProgressVisibility("downloading", "Procesando cola...", displaySongName);
+
+    // Si quedan más canciones, aplicar control de ritmo (pacing) para no sobrecargar yt-dlp
+    if (i < unDownloaded.length - 1 && !playlistBatchState.isCancelled) {
+      if (wasAlreadyCached) {
+        await sleepInterruptible(120);
+      } else if (
+        consecutiveNetworkDownloads > 0 &&
+        consecutiveNetworkDownloads % BATCH_COOLDOWN_EVERY === 0
+      ) {
+        for (let sec = BATCH_COOLDOWN_SECONDS; sec > 0; sec--) {
+          if (playlistBatchState.isCancelled) break;
+          updateProgressVisibility(
+            "cooldown",
+            `Pausa preventiva anti-saturación (${sec}s)...`,
+            displaySongName
+          );
+          await sleepInterruptible(1000);
+        }
+      } else {
+        // Espera con jitter natural entre 2.2s y 3.4s entre descargas reales
+        const jitterMs = 2200 + Math.floor(Math.random() * 1200);
+        await sleepInterruptible(jitterMs);
+      }
+    }
   }
 
+  const wasCancelled = playlistBatchState.isCancelled;
   isDownloadingAllPlaylist = false;
+  downloadingPlaylistId = null;
+  downloadAllProgressBtnHTML = "";
+
   if (downloadAllPlaylistBtn) {
     downloadAllPlaylistBtn.disabled = false;
     downloadAllPlaylistBtn.innerHTML = `<i class="ph ph-download-simple"></i> Descargar Todo`;
   }
 
   await loadDownloaded();
-  new Notify({
-    status: "success",
-    title: "Descargas completadas",
-    text: `Se descargaron ${downloadedCount} canciones de "${pl.name}".`,
-    effect: "fade",
-  });
+
+  if (wasCancelled) {
+    updateProgressVisibility(
+      "cancelled",
+      `Cancelado (${downloadedCount + cachedCount} listas, ${failedCount} fallos)`,
+      ""
+    );
+    if (window.systemTray) {
+      window.systemTray.addMessage(
+        "Descarga cancelada",
+        `Se detuvo la descarga de "${pl.name}". ${downloadedCount + cachedCount} canciones quedaron disponibles offline.`,
+        "warning",
+        false
+      );
+    }
+    new Notify({
+      status: "warning",
+      title: "Descarga detenida",
+      text: `Se guardaron ${downloadedCount + cachedCount} canciones antes de cancelar.`,
+      effect: "fade",
+    });
+  } else {
+    updateProgressVisibility(
+      "completed",
+      `Completado (${downloadedCount} nuevas, ${cachedCount} en caché${failedCount > 0 ? `, ${failedCount} fallos` : ""})`,
+      ""
+    );
+    if (window.systemTray) {
+      window.systemTray.addMessage(
+        "Playlist descargada",
+        `"${pl.name}" finalizó: ${downloadedCount} descargadas, ${cachedCount} en caché${failedCount > 0 ? ` y ${failedCount} omitidas` : ""}.`,
+        failedCount > 0 ? "warning" : "success",
+        false
+      );
+    }
+    new Notify({
+      status: failedCount > 0 ? "warning" : "success",
+      title: "Descargas completadas",
+      text: `Playlist "${pl.name}": ${downloadedCount + cachedCount} disponibles offline${failedCount > 0 ? ` (${failedCount} fallos)` : ""}.`,
+      effect: "fade",
+    });
+  }
 }
 
 // ---- Sincronizador en Segundo Plano con YouTube (Opción B) ----
@@ -4835,86 +6075,114 @@ if (exportZipBtn) {
 
 // Inicializar configuraciones guardadas
 initVolume();
+initAccessibilitySettings();
 initLastSong();
 renderMostPlayedCardCover();
 
 // ======= PLAYLIST: MIS MÁS ESCUCHADAS (SQLite) =======
 async function showMostPlayedList() {
   try {
-    // 1. Navegar a la vista de countryTop que es la que se usa para listas detalladas
     navigateTo("countryTop");
-    
+    if (typeof scrollToTop === "function") scrollToTop(true);
+
     const container = document.getElementById("country-top-container");
     if (!container) return;
-    
-    container.innerHTML = "<h3>Mi Playlist - Cargando...</h3>";
-    container.scrollIntoView({ behavior: "smooth" });
-    
+
+    container.innerHTML = `
+      <div class="playlist-detail-topbar" style="margin-bottom: 16px;">
+        <button class="backtop-premium" id="btnBackFromMostPlayed" title="Volver a Inicio">
+          <i class="ph ph-arrow-left"></i>
+          <span>Volver a Inicio</span>
+        </button>
+      </div>
+      <div class="top-chart-hero">
+        <img src="resources/player.gif" class="top-chart-hero-cover" id="mostPlayedHeroCover" onerror="this.onerror=null; this.src='resources/player.gif';">
+        <div class="top-chart-hero-info">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span class="vaen-card-tag">Mi Playlist</span>
+          </div>
+          <h2 style="margin: 0; color: #fff; font-size: 1.5rem; font-weight: 800; font-family: Poppins, sans-serif;">Mis Más Escuchadas</h2>
+          <p style="margin: 0; color: rgba(255, 255, 255, 0.65); font-size: 0.9rem;">Lo que más reproduces en Mexlify</p>
+        </div>
+      </div>
+      <div class="search-loading-state" style="padding: 30px; text-align: center; color: rgba(255, 255, 255, 0.7); display: flex; flex-direction: column; align-items: center; gap: 10px;">
+        <i class="ph ph-spinner ph-spin" style="font-size: 2rem; color: #ff0090;"></i>
+        <span>Cargando tus canciones más escuchadas...</span>
+      </div>
+      <ul id="mostPlayedSongsList" class="top-chart-songs-list" style="list-style: none; padding: 0; margin: 0;"></ul>
+    `;
+
+    document.getElementById("btnBackFromMostPlayed")?.addEventListener("click", () => {
+      navigateTo("home");
+      if (typeof scrollToTop === "function") scrollToTop(true);
+    });
+
     // 2. Obtener canciones de SQLite
     const songs = await window.electronAPI.getMostPlayedSongs();
-    
+
+    const loadingEl = container.querySelector(".search-loading-state");
+    if (loadingEl) loadingEl.remove();
+
     if (!songs || songs.length === 0) {
       container.innerHTML = `
-        <h3>Mi Playlist - Mis Más Escuchadas</h3>
-        <div class="messages-empty-state" style="padding: 40px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px;">
-          <i class="ph ph-music-notes" style="font-size:3rem; color:rgba(255,0,144,0.4);"></i>
-          <p style="color: #fff; font-family: Poppins, sans-serif; font-size: 1.1rem; margin: 0;">Aún no tienes canciones en tu top personal.</p>
-          <small style="color: rgba(255,255,255,0.6); max-width: 320px;">¡Reproduce tus canciones favoritas en la app para verlas listadas aquí!</small>
+        <div class="playlist-detail-topbar" style="margin-bottom: 16px;">
+          <button class="backtop-premium" id="btnBackFromMostPlayedEmpty" title="Volver a Inicio">
+            <i class="ph ph-arrow-left"></i>
+            <span>Volver a Inicio</span>
+          </button>
+        </div>
+        <div class="top-chart-hero">
+          <img src="resources/player.gif" class="top-chart-hero-cover" onerror="this.onerror=null; this.src='resources/player.gif';">
+          <div class="top-chart-hero-info">
+            <span class="vaen-card-tag">Mi Playlist</span>
+            <h2 style="margin: 0; color: #fff; font-size: 1.5rem; font-weight: 800; font-family: Poppins, sans-serif;">Mis Más Escuchadas</h2>
+            <p style="margin: 0; color: rgba(255, 255, 255, 0.65); font-size: 0.9rem;">Tu top personal basado en lo que reproduces en la app</p>
+          </div>
+        </div>
+        <div class="messages-empty-state" style="padding: 48px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(255, 255, 255, 0.02); border-radius: 16px; border: 1px dashed rgba(255, 255, 255, 0.08); margin-top: 10px;">
+          <i class="ph ph-music-notes" style="font-size: 3rem; color: #ff0090; opacity: 0.6;"></i>
+          <p style="color: #fff; font-family: Poppins, sans-serif; font-size: 1.1rem; font-weight: 600; margin: 0;">Aún no tienes canciones en tu top personal</p>
+          <small style="color: rgba(255, 255, 255, 0.6); max-width: 360px; line-height: 1.5;">¡Reproduce tus canciones favoritas en Mexlify para verlas listadas automáticamente aquí!</small>
         </div>
       `;
+      document.getElementById("btnBackFromMostPlayedEmpty")?.addEventListener("click", () => {
+        navigateTo("home");
+        if (typeof scrollToTop === "function") scrollToTop(true);
+      });
       return;
     }
-    
-    container.innerHTML = `<h3>Mi Playlist - Mis Más Escuchadas</h3>`;
-    
-    // Crear el botón "Reproducir todo"
-    const btnPlayAll = document.createElement("button");
-    btnPlayAll.id = "playAllbtn";
-    btnPlayAll.className = "vaen-play-btn";
-    btnPlayAll.textContent = "▶ Reproducir todo";
-    btnPlayAll.style.marginBottom = "15px";
-    container.appendChild(btnPlayAll);
-    
-    // Listado de tracks
-    let htmlList = "<ol class='most-played-list' style='list-style: none; padding: 0; margin: 0;'>";
-    songs.forEach((song, idx) => {
-      const playCountText = song.playCount === 1 ? "reproducción" : "reproducciones";
-      const thumb = song.thumbnail || "resources/player.gif";
-      const dur = song.duration
-        ? `${Math.floor(song.duration / 60)}:${String(song.duration % 60).padStart(2, "0")}`
-        : "N/A";
-        
-      htmlList += `
-        <li style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; padding: 10px 15px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" class="most-played-item" data-index="${idx}">
-          <div style="display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; padding-right: 15px;">
-            <span style="font-weight: bold; color: rgba(255,255,255,0.5); min-width: 20px; font-family: Poppins, sans-serif;">${idx + 1}</span>
-            <img src="${thumb}" style="width: 42px; height: 42px; border-radius: 8px; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;" class="play-most-played-thumb" onerror="this.onerror=null; this.src='resources/player.gif';">
-            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-              <a href="#" class="play-song-link" style="font-weight: bold; text-decoration: none; color: #fff; font-family: Poppins, sans-serif; font-size: 0.95rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cleanSongTitle(song.title)}</a>
-              <span style="color: rgba(255,255,255,0.6); font-size: 0.85rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${song.uploader}</span>
-            </div>
-          </div>
-          <div style="display: flex; align-items: center; gap: 15px;">
-            <span style="color: #aaa; font-size: 0.85rem; font-family: Poppins, sans-serif;">${dur}</span>
-            <span style="color: #ff0090; font-size: 0.85rem; font-family: Poppins, sans-serif; font-weight: 700; background: rgba(255,0,144,0.1); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,0,144,0.2); white-space: nowrap;">${song.playCount} ${playCountText}</span>
-          </div>
-        </li>
+
+    const heroCover = songs[0]?.thumbnail || "resources/player.gif";
+    const heroCoverEl = document.getElementById("mostPlayedHeroCover");
+    if (heroCoverEl) heroCoverEl.src = heroCover;
+
+    const heroInfo = container.querySelector(".top-chart-hero-info");
+    if (heroInfo) {
+      heroInfo.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <span class="vaen-card-tag">Mi Playlist</span>
+          <span class="stat-badge">${songs.length} canción${songs.length !== 1 ? "es" : ""}</span>
+        </div>
+        <h2 style="margin: 0; color: #fff; font-size: 1.5rem; font-weight: 800; font-family: Poppins, sans-serif;">Mis Más Escuchadas</h2>
+        <p style="margin: 0; color: rgba(255, 255, 255, 0.65); font-size: 0.9rem;">Tus canciones más reproducidas en Mexlify • Ordenadas por frecuencia</p>
+        <div class="top-chart-hero-actions">
+          <button id="btnPlayAllMostPlayed" class="changeBg" style="padding: 8px 18px; font-weight: 700; margin: 0;">
+            <i class="ph-fill ph-play"></i> Reproducir todo
+          </button>
+          <button id="btnShuffleMostPlayed" class="changeBg" style="padding: 8px 18px; font-weight: 700; margin: 0;">
+            <i class="ph ph-shuffle"></i> Mezclar
+          </button>
+        </div>
       `;
-    });
-    htmlList += "</ol>";
-    container.insertAdjacentHTML("beforeend", htmlList);
-    
-    // Click events
-    const items = container.querySelectorAll(".most-played-item");
-    items.forEach((item, idx) => {
-      const song = songs[idx];
-      const link = item.querySelector(".play-song-link");
-      const thumb = item.querySelector(".play-most-played-thumb");
-      
-      const playThis = (e) => {
-        if (e) e.preventDefault();
-        
-        // Cargar playlist completa en cola de reproducción
+    }
+
+    const ul = document.getElementById("mostPlayedSongsList");
+    if (!ul) return;
+    ul.innerHTML = "";
+
+    songs.forEach((song, idx) => {
+      const li = createSongListItem(song, { rank: idx + 1, playCount: song.playCount });
+      const playHandler = async () => {
         queue = songs.map(s => ({
           title: s.title,
           uploader: s.uploader,
@@ -4923,22 +6191,32 @@ async function showMostPlayedList() {
           filename: s.filename || null,
           url: s.url || null
         }));
+        currentIndex = idx;
+        saveQueueToStorage();
         renderQueue();
-        
-        playSong(queue[idx], !!queue[idx].filename, idx);
-        
-        // Highlight active playing
-        container.querySelectorAll(".play-song-link").forEach((a, i) => {
-          a.style.color = (i === idx) ? "#ff0090" : "#fff";
-        });
+        await playSong(queue[currentIndex], !!queue[currentIndex].filename, currentIndex);
+        highlightPlayingSong();
       };
-      
-      link.addEventListener("click", playThis);
-      if (thumb) thumb.addEventListener("click", playThis);
+
+      const origPlayBtn = li.querySelector(".playbtn");
+      const origImg = li.querySelector(".play");
+      const titleLink = li.querySelector(".song-info b");
+      if (origPlayBtn) {
+        origPlayBtn.replaceWith(origPlayBtn.cloneNode(true));
+        li.querySelector(".playbtn").addEventListener("click", playHandler);
+      }
+      if (origImg) {
+        origImg.replaceWith(origImg.cloneNode(true));
+        li.querySelector(".play").addEventListener("click", playHandler);
+      }
+      if (titleLink) {
+        titleLink.style.cursor = "pointer";
+        titleLink.addEventListener("click", playHandler);
+      }
+      ul.appendChild(li);
     });
-    
-    // Play all button handler
-    btnPlayAll.onclick = () => {
+
+    container.querySelector("#btnPlayAllMostPlayed")?.addEventListener("click", async () => {
       queue = songs.map(s => ({
         title: s.title,
         uploader: s.uploader,
@@ -4947,12 +6225,47 @@ async function showMostPlayedList() {
         filename: s.filename || null,
         url: s.url || null
       }));
+      currentIndex = 0;
       renderQueue();
+      new Notify({
+        status: "info",
+        title: "Mis Más Escuchadas",
+        text: `Reproduciendo ${queue.length} canciones.`,
+        effect: "fade",
+        autotimeout: 3000
+      });
       if (queue.length > 0) {
-        playSong(queue[0], !!queue[0].filename, 0);
+        await playSong(queue[0], !!queue[0].filename, 0);
+        highlightPlayingSong();
       }
-    };
-    
+    });
+
+    container.querySelector("#btnShuffleMostPlayed")?.addEventListener("click", async () => {
+      const shuffled = [...songs].sort(() => Math.random() - 0.5);
+      queue = shuffled.map(s => ({
+        title: s.title,
+        uploader: s.uploader,
+        duration: s.duration,
+        thumbnail: s.thumbnail,
+        filename: s.filename || null,
+        url: s.url || null
+      }));
+      currentIndex = 0;
+      renderQueue();
+      new Notify({
+        status: "info",
+        title: "Mis Más Escuchadas (Aleatorio)",
+        text: `Reproduciendo ${queue.length} canciones mezcladas.`,
+        effect: "fade",
+        autotimeout: 3000
+      });
+      if (queue.length > 0) {
+        await playSong(queue[0], !!queue[0].filename, 0);
+        highlightPlayingSong();
+      }
+    });
+
+    highlightPlayingSong();
   } catch (err) {
     console.error("Error al cargar la playlist de más escuchadas:", err);
   }
@@ -4968,7 +6281,7 @@ async function playMostPlayedList(autoPlay = true) {
         text: "¡Reproduce canciones en la app para llenar tu playlist!",
         effect: "fade",
       });
-      showMostPlayedList(); // Show empty state
+      await showMostPlayedList(); // Show empty state
       return;
     }
     
@@ -4985,8 +6298,17 @@ async function playMostPlayedList(autoPlay = true) {
         filename: s.filename || null,
         url: s.url || null
       }));
+      currentIndex = 0;
       renderQueue();
-      playSong(queue[0], !!queue[0].filename, 0);
+      new Notify({
+        status: "info",
+        title: "Mis Más Escuchadas",
+        text: `Reproduciendo ${queue.length} canciones.`,
+        effect: "fade",
+        autotimeout: 3000
+      });
+      await playSong(queue[0], !!queue[0].filename, 0);
+      highlightPlayingSong();
     }
   } catch (err) {
     console.error("Error al reproducir más escuchadas:", err);
@@ -5046,7 +6368,7 @@ function highlightPlayingSong(autoScroll = false) {
   const currentTitle = currentSong ? (currentSong.title || currentSong.Title || "").toLowerCase() : "";
   if (!currentTitle) return;
 
-  const lists = ["#resultsList", "#downloadsList", "#recentsList", "#playlistSongsList"];
+  const lists = ["#resultsList", "#downloadsList", "#recentsList", "#playlistSongsList", "#topChartSongsList", "#mostPlayedSongsList"];
   lists.forEach((listId) => {
     const list = document.querySelector(listId);
     if (!list) return;
@@ -5090,6 +6412,64 @@ function highlightPlayingSong(autoScroll = false) {
 // Inicialización de escuchadores interactivos al cargar el DOM
 document.addEventListener("DOMContentLoaded", () => {
   // 2. Filtro local para descargas
+    // Botones de acción para descargas (Reproducir todo y Mezclar)
+  const playAllDownloadedBtn = document.getElementById("playAllDownloadedBtn");
+  if (playAllDownloadedBtn) {
+    playAllDownloadedBtn.addEventListener("click", async () => {
+      const downloaded = await window.electronAPI.getDownloaded();
+      if (!downloaded || downloaded.length === 0) return;
+      queue = downloaded.map((s) => ({
+        title: s.Title || s.title,
+        uploader: s.Uploader || s.uploader,
+        duration: s.Duration || s.duration,
+        filename: s.Filename || s.filename,
+        thumbnail: s.Thumbnail || s.thumbnail || "resources/player.gif",
+        url: s.Url || s.url || null,
+      }));
+      currentIndex = 0;
+      saveQueueToStorage();
+      renderQueue();
+      new Notify({
+        status: "info",
+        title: "Fuera de línea",
+        text: `Reproduciendo ${queue.length} canciones descargadas.`,
+        effect: "fade",
+        autotimeout: 3000
+      });
+      await playSong(queue[0], true, 0);
+      highlightPlayingSong();
+    });
+  }
+
+  const shuffleDownloadedBtn = document.getElementById("shuffleDownloadedBtn");
+  if (shuffleDownloadedBtn) {
+    shuffleDownloadedBtn.addEventListener("click", async () => {
+      const downloaded = await window.electronAPI.getDownloaded();
+      if (!downloaded || downloaded.length === 0) return;
+      const shuffled = [...downloaded].sort(() => Math.random() - 0.5);
+      queue = shuffled.map((s) => ({
+        title: s.Title || s.title,
+        uploader: s.Uploader || s.uploader,
+        duration: s.Duration || s.duration,
+        filename: s.Filename || s.filename,
+        thumbnail: s.Thumbnail || s.thumbnail || "resources/player.gif",
+        url: s.Url || s.url || null,
+      }));
+      currentIndex = 0;
+      saveQueueToStorage();
+      renderQueue();
+      new Notify({
+        status: "info",
+        title: "Fuera de línea (Aleatorio)",
+        text: `Reproduciendo ${queue.length} canciones mezcladas.`,
+        effect: "fade",
+        autotimeout: 3000
+      });
+      await playSong(queue[0], true, 0);
+      highlightPlayingSong();
+    });
+  }
+
   const offlineFilterInput = document.getElementById("offlineFilterInput");
   if (offlineFilterInput) {
     offlineFilterInput.addEventListener("input", () => {

@@ -86,6 +86,11 @@ script copy.js
 
 # Files
 
+## File: assets/css/modal.css
+````css
+
+````
+
 ## File: assets/js/lyrics.js
 ````javascript
 /**
@@ -251,6 +256,21 @@ function init()
 ⋮----
 reload: () =>
 onSongChange: (newSong) =>
+````
+
+## File: assets/js/modal.js
+````javascript
+function showModal(
+  title = "Mexlify",
+  message = "Se ha generado un mensaje, sin embargo no se ha especificado el contenido",
+  type = "info",
+  id = null
+)
+⋮----
+// show terms and conditions on first use
+⋮----
+// first use accept terms and conditions
+function showTermsAndConditions()
 ````
 
 ## File: services/lyricsService.js
@@ -788,26 +808,6 @@ mgr.currentSong = mgr.queue[1]; // Imagine
 // mexlify://C:/ --> mexlify:///C:/
 ````
 
-## File: assets/css/modal.css
-````css
-
-````
-
-## File: assets/js/modal.js
-````javascript
-function showModal(
-  title = "Mexlify",
-  message = "Se ha generado un mensaje, sin embargo no se ha especificado el contenido",
-  type = "info",
-  id = null
-)
-⋮----
-// show terms and conditions on first use
-⋮----
-// first use accept terms and conditions
-function showTermsAndConditions()
-````
-
 ## File: renderer.js
 ````javascript
 // Función para log debug
@@ -1158,6 +1158,93 @@ function measureFPS()
 // Aplicar inmediatamente al background
 ````
 
+## File: assets/js/equalizer.js
+````javascript
+// ======= 6. CONFIGURACIÓN SEPARADA =======
+⋮----
+rampTime: 0.05, // Tiempo de rampa suave (~0.05s) para evitar clicks
+⋮----
+// Ajustes de presets con coeficientes de ganancia para cada banda
+⋮----
+// ======= 2. CONTROL DE LOGS EN PRODUCCIÓN =======
+⋮----
+/**
+   * Imprime mensajes de depuración en consola si DEBUG está activo.
+   * @param {...any} args - Argumentos a imprimir.
+   */
+function log(...args)
+⋮----
+// Obtener elementos de la interfaz
+⋮----
+// Validaciones iniciales del DOM
+⋮----
+// ======= 4. ARQUITECTURA: CLASE EQUALIZER =======
+/**
+   * Clase que gestiona el ecualizador de audio utilizando la Web Audio API.
+   */
+class Equalizer
+⋮----
+/**
+     * Inicializa el contexto de audio y los nodos de filtrado.
+     * El contexto solo se creará si el navegador lo soporta.
+     * @param {HTMLAudioElement} audioEl - Elemento de audio HTML5.
+     * @returns {boolean} True si la inicialización fue exitosa, false en caso contrario.
+     */
+init(audioEl)
+⋮----
+// ======= 7. DETECCIÓN DE SOPORTE =======
+⋮----
+// ======= 3. MANEJO DE ERRORES EN AUDIO CONTEXT =======
+⋮----
+// Crear filtros de frecuencia
+⋮----
+// Crear nodos de ganancia para cada banda
+⋮----
+// Conectar la cadena de audio: source -> filtros -> ganancias -> salida
+⋮----
+// Guardar las referencias de los nodos
+⋮----
+// Si había un preset pendiente seleccionado antes de dar play, aplicarlo
+⋮----
+/**
+     * Reanuda de forma segura el contexto de audio si está suspendido.
+     * @returns {Promise<void>}
+     */
+async resume()
+⋮----
+/**
+     * Aplica de forma suave los cambios de ganancia de un preset determinado.
+     * @param {string} name - Nombre del preset de EQ.
+     */
+applyPreset(name)
+⋮----
+// Validar si el preset existe, si no, aplicar fallback "flat"
+⋮----
+// ======= 8. FLUJO CORRECTO: Si no está inicializado, guardar como pendiente =======
+⋮----
+// ======= 5. TRANSICIONES SUAVES (linearRampToValueAtTime) =======
+⋮----
+// Anclar el valor inicial de la ganancia al valor actual para evitar chasquidos
+⋮----
+// Rampa lineal hacia el valor objetivo en rampTime segundos
+⋮----
+// Instanciar el gestor del ecualizador
+⋮----
+// ======= 3. MANEJO DE ERRORES EN LOCAL STORAGE & FALLBACK =======
+⋮----
+// Sincronizar el select de la interfaz
+⋮----
+// Guardar el preset inicial en el ecualizador (se aplicará al iniciar el reproductor)
+⋮----
+// ======= 8. FLUJO DE INICIALIZACIÓN POR EVENTO PLAY =======
+⋮----
+// ======= 1. BUG: UN SOLO EVENT LISTENER PARA EL SELECT =======
+⋮----
+// Guardar en localStorage de forma segura
+⋮----
+// Aplicar al ecualizador
+````
+
 ## File: assets/js/style.js
 ````javascript
 // ======= Fondo dinámico central =======
@@ -1257,93 +1344,6 @@ function saySong(message)
 audio.preload = "auto"; // 👈 asegura que se descargue antes de reproducir
 ⋮----
 // botón para probar la voz
-````
-
-## File: assets/js/equalizer.js
-````javascript
-// ======= 6. CONFIGURACIÓN SEPARADA =======
-⋮----
-rampTime: 0.05, // Tiempo de rampa suave (~0.05s) para evitar clicks
-⋮----
-// Ajustes de presets con coeficientes de ganancia para cada banda
-⋮----
-// ======= 2. CONTROL DE LOGS EN PRODUCCIÓN =======
-⋮----
-/**
-   * Imprime mensajes de depuración en consola si DEBUG está activo.
-   * @param {...any} args - Argumentos a imprimir.
-   */
-function log(...args)
-⋮----
-// Obtener elementos de la interfaz
-⋮----
-// Validaciones iniciales del DOM
-⋮----
-// ======= 4. ARQUITECTURA: CLASE EQUALIZER =======
-/**
-   * Clase que gestiona el ecualizador de audio utilizando la Web Audio API.
-   */
-class Equalizer
-⋮----
-/**
-     * Inicializa el contexto de audio y los nodos de filtrado.
-     * El contexto solo se creará si el navegador lo soporta.
-     * @param {HTMLAudioElement} audioEl - Elemento de audio HTML5.
-     * @returns {boolean} True si la inicialización fue exitosa, false en caso contrario.
-     */
-init(audioEl)
-⋮----
-// ======= 7. DETECCIÓN DE SOPORTE =======
-⋮----
-// ======= 3. MANEJO DE ERRORES EN AUDIO CONTEXT =======
-⋮----
-// Crear filtros de frecuencia
-⋮----
-// Crear nodos de ganancia para cada banda
-⋮----
-// Conectar la cadena de audio: source -> filtros -> ganancias -> salida
-⋮----
-// Guardar las referencias de los nodos
-⋮----
-// Si había un preset pendiente seleccionado antes de dar play, aplicarlo
-⋮----
-/**
-     * Reanuda de forma segura el contexto de audio si está suspendido.
-     * @returns {Promise<void>}
-     */
-async resume()
-⋮----
-/**
-     * Aplica de forma suave los cambios de ganancia de un preset determinado.
-     * @param {string} name - Nombre del preset de EQ.
-     */
-applyPreset(name)
-⋮----
-// Validar si el preset existe, si no, aplicar fallback "flat"
-⋮----
-// ======= 8. FLUJO CORRECTO: Si no está inicializado, guardar como pendiente =======
-⋮----
-// ======= 5. TRANSICIONES SUAVES (linearRampToValueAtTime) =======
-⋮----
-// Anclar el valor inicial de la ganancia al valor actual para evitar chasquidos
-⋮----
-// Rampa lineal hacia el valor objetivo en rampTime segundos
-⋮----
-// Instanciar el gestor del ecualizador
-⋮----
-// ======= 3. MANEJO DE ERRORES EN LOCAL STORAGE & FALLBACK =======
-⋮----
-// Sincronizar el select de la interfaz
-⋮----
-// Guardar el preset inicial en el ecualizador (se aplicará al iniciar el reproductor)
-⋮----
-// ======= 8. FLUJO DE INICIALIZACIÓN POR EVENTO PLAY =======
-⋮----
-// ======= 1. BUG: UN SOLO EVENT LISTENER PARA EL SELECT =======
-⋮----
-// Guardar en localStorage de forma segura
-⋮----
-// Aplicar al ecualizador
 ````
 
 ## File: services/ytdlpResolver.js
@@ -1462,65 +1462,6 @@ stats: () => (
     }
   }
 }
-````
-
-## File: preload.js
-````javascript
-// Buscar canciones en YouTube
-searchSong: async (query) =>
-⋮----
-// Descargar canción a carpeta local
-downloadSong: async (song) =>
-⋮----
-// Obtener lista de canciones descargadas
-getDownloaded: async () =>
-⋮----
-// Reproducir canción (si ya está descargada, usa local; si no, stream)
-streamSong: async (song) =>
-⋮----
-// Precalienta canciones en segundo plano sin bloquear la UI.
-prewarmSongs: async (songs, limit = 3) =>
-⋮----
-getYtdlpDiagnostics: async () =>
-⋮----
-updateYtdlpNightly: async () =>
-⋮----
-// Activar/desactivar modo debug
-setDebug: async (value) =>
-⋮----
-// Enviar mensajes de debug al main
-log: async (msg) =>
-⋮----
-// Obtener ruta de la app (útil para reproducir archivos locales)
-getAppPath: async () =>
-⋮----
-// DISCORD STATUS
-setDiscordActivity: async (details, state, image, resetTime) =>
-⋮----
-deleteDownload: async (filename) =>
-⋮----
-exportDownloadsToZip: async (selectedFilenames) =>
-⋮----
-openExternal: async (url) =>
-⋮----
-// SQLite Database API
-incrementPlayCount: async (song) =>
-⋮----
-getMostPlayedSongs: async () =>
-⋮----
-// Recibir mensajes de actualización de yt-dlp
-onYtdlpUpdate: (callback) =>
-⋮----
-// Eventos de progreso de exportación
-onExportProgress: (callback) =>
-removeExportProgressListener: () =>
-⋮----
-// Gestión de archivos .mexref
-saveMexrefFile: async (payload) =>
-readMexrefFiles: async () =>
-⋮----
-// Sistema de letras LRCLIB con sincronización y caché SQLite
-getLyrics: async (songParams) =>
 ````
 
 ## File: readme.md
@@ -1679,6 +1620,65 @@ El uso de Mexlify implica la aceptación de los Términos de Servicio de YouTube
 Versión: 1.0.0 Alpha
 Última actualización: 03 de Octubre de 2025  
 Desarrollado por: VAEN Systems
+````
+
+## File: preload.js
+````javascript
+// Buscar canciones en YouTube
+searchSong: async (query) =>
+⋮----
+// Descargar canción a carpeta local
+downloadSong: async (song) =>
+⋮----
+// Obtener lista de canciones descargadas
+getDownloaded: async () =>
+⋮----
+// Reproducir canción (si ya está descargada, usa local; si no, stream)
+streamSong: async (song) =>
+⋮----
+// Precalienta canciones en segundo plano sin bloquear la UI.
+prewarmSongs: async (songs, limit = 3) =>
+⋮----
+getYtdlpDiagnostics: async () =>
+⋮----
+updateYtdlpNightly: async () =>
+⋮----
+// Activar/desactivar modo debug
+setDebug: async (value) =>
+⋮----
+// Enviar mensajes de debug al main
+log: async (msg) =>
+⋮----
+// Obtener ruta de la app (útil para reproducir archivos locales)
+getAppPath: async () =>
+⋮----
+// DISCORD STATUS
+setDiscordActivity: async (details, state, image, resetTime) =>
+⋮----
+deleteDownload: async (filename) =>
+⋮----
+exportDownloadsToZip: async (selectedFilenames) =>
+⋮----
+openExternal: async (url) =>
+⋮----
+// SQLite Database API
+incrementPlayCount: async (song) =>
+⋮----
+getMostPlayedSongs: async () =>
+⋮----
+// Recibir mensajes de actualización de yt-dlp
+onYtdlpUpdate: (callback) =>
+⋮----
+// Eventos de progreso de exportación
+onExportProgress: (callback) =>
+removeExportProgressListener: () =>
+⋮----
+// Gestión de archivos .mexref
+saveMexrefFile: async (payload) =>
+readMexrefFiles: async () =>
+⋮----
+// Sistema de letras LRCLIB con sincronización y caché SQLite
+getLyrics: async (songParams) =>
 ````
 
 ## File: assets/css/style.css
@@ -2978,6 +2978,17 @@ li.is-playing .song-info b {
 ⋮----
 .color-input-wrapper input[type="color"]::-webkit-color-swatch {
 ⋮----
+/* Sliders de rango en Ajustes (Accesibilidad) */
+.settings-range-wrapper {
+⋮----
+.settings-range-slider {
+⋮----
+.settings-range-slider::-webkit-slider-thumb {
+⋮----
+.settings-range-slider::-webkit-slider-thumb:hover {
+⋮----
+.settings-range-value {
+⋮----
 .color-hex-preview {
 ⋮----
 .theme-controls {
@@ -3429,7 +3440,7 @@ await playSong(song); // solo se ejecuta si NO estaba bloqueado
 // desbloquear a los 5s
 ⋮----
 // ======= iTunes API =======
-class ITunesSearch {
+class ITunesSearch
 ⋮----
 async searchTracks(query, limit = 15)
 ⋮----
@@ -3467,11 +3478,24 @@ async function playRandomSongByArtistDirect()
 ⋮----
 // ---- Eventos del Buscador de canciones ----
 ⋮----
-const step = 0.1; // Sensibilidad del scroll
+// ======= Ajustes de Sensibilidad de Volumen (Touchpad y Ratón) =======
 ⋮----
-// Scroll arriba: sube volumen
+function initAccessibilitySettings()
 ⋮----
-// Scroll abajo: baja volumen
+// Escuchar wheel en sliders y en el contenedor del volumen para facilitar el gesto en touchpad
+⋮----
+// Soportar tanto scroll vertical como horizontal del touchpad
+⋮----
+// Sensibilidad calibrada para touchpad y rueda de ratón (ajustable en Ajustes > Accesibilidad):
+// deltaMode 0: píxeles (touchpad o ratones de alta resolución)
+// deltaMode 1: líneas (ratón convencional)
+// deltaMode 2: páginas
+⋮----
+// Modo píxeles (típico de touchpads)
+⋮----
+// Limitar el paso máximo por evento según la sensibilidad configurada
+⋮----
+// Redondear a 4 decimales para mantener fluidez y evitar imprecisión flotante
 ⋮----
 function handleVolumeChange(e)
 ⋮----
@@ -3792,7 +3816,7 @@ function getExportedSongsHistory()
 function saveExportedSongsHistory(filenames)
 ⋮----
 // ---- Helpers de normalización y extracción de IDs ----
-function cleanSongTitle(str)
+function normalizeMexrefTitle(str)
 ⋮----
 function cleanArtist(str)
 ⋮----
@@ -4337,6 +4361,9 @@ function highlightPlayingSong(autoScroll = false)
                             <button class="tablinkSettings" onclick="settings.openTab('tabTheme', this)">
                                 <i class="ph ph-paint-brush"></i> Personalización
                             </button>
+                            <button class="tablinkSettings" onclick="settings.openTab('tabAccessibility', this)">
+                                <i class="ph ph-hand-tap"></i> Accesibilidad
+                            </button>
                         </div>
                         <!-- Tab General -->
                         <div id="tabGeneral" class="settings-group-container">
@@ -4501,6 +4528,47 @@ function highlightPlayingSong(autoScroll = false)
                             </div>
                             <div id="sidebarElements" class="settings-option">
                                 <!-- Opciones de elementos para la barra lateral del reproductor -->
+                            </div>
+                        </div>
+                        <!-- Tab Accesibilidad -->
+                        <div id="tabAccessibility" class="settings-group-container is-hidden">
+                            <div class="settings-card glass-box-premium">
+                                <div class="settings-card-header">
+                                    <i class="ph ph-sliders"></i>
+                                    <h3>Sensibilidad de Volumen (Touchpad y Ratón)</h3>
+                                </div>
+                                <div class="settings-row">
+                                    <div class="settings-info">
+                                        <span class="settings-label">Sensibilidad de gestos (Touchpad)</span>
+                                        <small class="settings-desc">Ajusta la velocidad con la que cambia el volumen al deslizar con dos dedos sobre el control de volumen.</small>
+                                    </div>
+                                    <div class="settings-control">
+                                        <div class="settings-range-wrapper">
+                                            <input type="range" id="touchpadSensitivity" class="settings-range-slider" min="0.01" max="0.10" step="0.005" value="0.035">
+                                            <span id="touchpadSensitivityValue" class="settings-range-value">3.5</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="settings-row">
+                                    <div class="settings-info">
+                                        <span class="settings-label">Sensibilidad de rueda (Ratón)</span>
+                                        <small class="settings-desc">Ajusta el paso de volumen al girar la rueda tradicional del ratón.</small>
+                                    </div>
+                                    <div class="settings-control">
+                                        <div class="settings-range-wrapper">
+                                            <input type="range" id="mouseWheelSensitivity" class="settings-range-slider" min="0.01" max="0.12" step="0.005" value="0.04">
+                                            <span id="mouseWheelSensitivityValue" class="settings-range-value">4.0</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="settings-row buttons-row">
+                                    <button id="resetSensitivityBtn" class="changeBg" type="button">
+                                        <i class="ph ph-arrows-counter-clockwise"></i> Restablecer Valores
+                                    </button>
+                                </div>
+                                <div class="settings-row note-row">
+                                    <small class="settings-note"><i class="ph ph-info"></i> Puedes probar el volumen inmediatamente deslizando sobre el control de volumen de la derecha o inferior.</small>
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -473,43 +473,87 @@ function execYtdlp(args = []) {
   });
 }
 
-function execYtdlpDownload(args = []) {
+function execYtdlpDownload(args = [], isRetry = false) {
   return new Promise((resolve, reject) => {
     const ytdlpPath = getYtdlpPath();
     const finalArgs = [...args];
+    if (!finalArgs.includes("--no-playlist")) {
+      finalArgs.push("--no-playlist");
+    }
+    if (!finalArgs.includes("--no-check-certificates")) {
+      finalArgs.push("--no-check-certificates");
+    }
+    if (!finalArgs.includes("--retries")) {
+      finalArgs.push("--retries", "3", "--fragment-retries", "3");
+    }
+    if (!finalArgs.includes("--extractor-args")) {
+      finalArgs.push(
+        "--extractor-args",
+        isRetry
+          ? "youtube:player_client=android,web"
+          : "youtube:player_client=mweb,android"
+      );
+    }
     const cookiesDestPath = path.join(app.getPath("userData"), "cookies.txt");
-    if (fs.existsSync(cookiesDestPath) && !args.includes("--cookies")) {
+    if (fs.existsSync(cookiesDestPath) && !finalArgs.includes("--cookies")) {
       finalArgs.push("--cookies", cookiesDestPath);
     }
-    const proc = spawn(ytdlpPath, finalArgs, { stdio: ["pipe", "pipe", "pipe"] });
+    const proc = spawn(ytdlpPath, finalArgs, {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
 
     let stderr = "";
+    let settled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        try {
+          proc.kill("SIGKILL");
+        } catch (e) {}
+        reject(new Error("Tiempo de espera agotado en yt-dlp (timeout 95s)"));
+      }
+    }, 95000);
 
     proc.stderr.on("data", (data) => (stderr += data.toString()));
 
+    proc.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      reject(err);
+    });
+
     proc.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
       if (code === 0) {
-        // Éxito, simplemente resolvemos sin JSON
         resolve(true);
+      } else if (!isRetry) {
+        console.log("Reintentando descarga con cliente alternativo de yt-dlp...");
+        execYtdlpDownload(args, true).then(resolve).catch(reject);
       } else {
-        // Si falla por el formato volver a intentarlo de otra manera
-        const newArgs = args.map((arg) =>
-          arg === "-f" ? "-f bestaudio" : arg
-        );
-        if (newArgs.toString() !== args.toString()) {
-          console.log("Reintentando descarga con otros parámetros...");
-          execYtdlpDownload(newArgs).then(resolve).catch(reject);
-        } else {
-          reject(new Error(stderr || `yt-dlp exited with code ${code}`));
-        }
+        reject(new Error(stderr || `yt-dlp exited with code ${code}`));
       }
     });
   });
 }
 
+function isPlausibleMediaUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 async function validateURL(url) {
   try {
-    await execYtdlp([url, "--dump-single-json", "--quiet", "--no-warnings"]);
+    await execYtdlp([url, "--dump-single-json", "--no-playlist", "--quiet", "--no-warnings"]);
     return true;
   } catch (err) {
     console.error("URL inválida:", err.message);
@@ -766,7 +810,15 @@ function embedCoverAndMetadata(mp3Path, coverPath, metadataObj = {}, outPath) {
   });
 }
 
-ipcMain.handle("downloadSong", async (event, song) => {
+let downloadQueueChain = Promise.resolve();
+
+function runDownloadSongTask(song) {
+  const nextTask = downloadQueueChain.then(() => executeSingleDownload(song));
+  downloadQueueChain = nextTask.catch(() => {});
+  return nextTask;
+}
+
+async function executeSingleDownload(song) {
   try {
     // Validar datos
     if (!song?.url || !song?.title) {
@@ -775,25 +827,32 @@ ipcMain.handle("downloadSong", async (event, song) => {
 
     // Nombre seguro del archivo
     const safeTitle = song.title.replace(/[<>:"/\\|?*]+/g, "_");
-    const outputPath = path.join(downloadsDir, `${safeTitle}.mp3`);
+    const safeFilename = `${safeTitle}.mp3`;
+    const outputPath = path.join(downloadsDir, safeFilename);
     const metadataFile = path.join(metadataDir, `${safeTitle}.txt`);
 
-    // Si ya existe, retornar
-    if (fs.existsSync(outputPath)) {
-      return { success: true, path: outputPath, alreadyExists: true };
+    // Si ya existe y tiene contenido válido, retornar inmediatamente sin invocar yt-dlp
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+      return {
+        success: true,
+        path: outputPath,
+        filename: safeFilename,
+        alreadyExists: true,
+      };
     }
 
-    // Validar URL
-    const isValid = await validateURL(song.url);
-    if (!isValid) throw new Error("URL inválida o inaccesible");
-    console.log(song);
-    // Ejecutar yt-dlp para descargar audio
+    // Validación ligera de URL sin spawnear un proceso yt-dlp adicional
+    if (!isPlausibleMediaUrl(song.url)) {
+      throw new Error("URL inválida o inaccesible");
+    }
+
+    // Ejecutar yt-dlp para descargar audio (1 solo proceso por canción)
     await execYtdlpDownload([
       song.url,
       "-o",
       outputPath,
       "-f",
-      "bestaudio",
+      "bestaudio/best",
       "--extract-audio",
       "--audio-format",
       "mp3",
@@ -852,7 +911,7 @@ ipcMain.handle("downloadSong", async (event, song) => {
       `Title: ${song.title}`,
       `Uploader: ${song.uploader || "N/A"}`,
       `Duration: ${song.duration || "N/A"}`,
-      `Filename: ${safeTitle}.mp3`,
+      `Filename: ${safeFilename}`,
       `Thumbnail: ${localThumbnail}`,
       `DownloadedAt: ${downloadedAt}`,
       `CreatedAt: ${downloadedAt}`,
@@ -861,11 +920,15 @@ ipcMain.handle("downloadSong", async (event, song) => {
 
     fs.writeFileSync(metadataFile, metadata, "utf-8");
 
-    return { success: true, path: outputPath };
+    return { success: true, path: outputPath, filename: safeFilename, alreadyExists: false };
   } catch (err) {
     console.error("downloadSong error:", err);
     return { success: false, error: err.message };
   }
+}
+
+ipcMain.handle("downloadSong", async (event, song) => {
+  return runDownloadSongTask(song);
 });
 ipcMain.handle("deleteDownload", async (event, filename) => {
   try {

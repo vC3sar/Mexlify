@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' mexlify: data: blob: https:; media-src 'self' mexlify: https: blob: data:; img-src 'self' mexlify: https: data: blob:; font-src 'self' https: data:; connect-src 'self' https: mexlify:;">
     <title>Mexlify</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="assets/css/style.css">
@@ -134,9 +135,9 @@
 
             </div>
             <div class="vaen-cards-container">
-                <div class="vaen-card" onclick="document.getElementById('btnCountryMixB').click()">
+                <div class="vaen-card" onclick="showTopChartList('mexico')">
                     <div class="spotify-card-cover">
-                        <img src="assets/top_mexico.jpg" class="spotify-cover-single">
+                        <img src="assets/top_mexico.jpg" class="spotify-cover-single" onerror="this.onerror=null; this.src='resources/player.gif';">
                     </div>
                     <div class="vaen-card-info">
                         <span class="vaen-card-tag">Top Nacional</span>
@@ -144,13 +145,13 @@
                         <p class="vaen-card-desc">El Top 50 del país</p>
                     </div>
                     <button id="btnCountryMixB" class="vaen-card-play-btn"
-                        onclick="event.stopPropagation(); playCountry('mexico', 'month')">
+                        onclick="event.stopPropagation(); playTopChart('mexico', true)">
                         <i class="ph-fill ph-play"></i>
                     </button>
                 </div>
-                <div class="vaen-card" onclick="document.getElementById('btnCountryMixA').click()">
+                <div class="vaen-card" onclick="showTopChartList('global')">
                     <div class="spotify-card-cover">
-                        <img src="assets/top_global.jpg" class="spotify-cover-single">
+                        <img src="assets/top_global.jpg" class="spotify-cover-single" onerror="this.onerror=null; this.src='resources/player.gif';">
                     </div>
                     <div class="vaen-card-info">
                         <span class="vaen-card-tag">Mix Global</span>
@@ -158,7 +159,7 @@
                         <p class="vaen-card-desc">Tendencias del momento</p>
                     </div>
                     <button id="btnCountryMixA" class="vaen-card-play-btn"
-                        onclick="event.stopPropagation(); playCountry('global', 'day')">
+                        onclick="event.stopPropagation(); playTopChart('global', true)">
                         <i class="ph-fill ph-play"></i>
                     </button>
                 </div>
@@ -253,7 +254,22 @@
                             <span class="search-tip-label">Combina título y artista para resultados más precisos.</span>
                         </div>
 
-                        <div class="ListHeader" id="searchResultsHeader" style="display: none;">
+                        <div class="ListHeader" id="defaultRegionalHeader" style="display: none;">
+                            <div class="header-title-group">
+                                <h2>Tendencias en México</h2>
+                                <span class="stat-badge" id="regionalCountBadge">Top 50</span>
+                            </div>
+                            <div class="header-actions-group">
+                                <button id="playAllRegionalBtn" class="changeBg" type="button" title="Reproducir todo el Top México">
+                                    <i class="ph ph-play"></i> Reproducir todo
+                                </button>
+                                <button id="shuffleRegionalBtn" class="changeBg" type="button" title="Mezclar canciones de México">
+                                    <i class="ph ph-shuffle"></i> Aleatorio
+                                </button>
+                            </div>
+                        </div>
+
+<div class="ListHeader" id="searchResultsHeader" style="display: none;">
                             <h2>Resultados</h2>
                         </div>
                         <ul id="resultsList">
@@ -268,9 +284,17 @@
                                 <h2>Fuera de línea</h2>
                                 <span class="stat-badge" id="offlineCountBadge">0 guardadas</span>
                             </div>
-                            <button id="exportZipBtn" class="changeBg" style="margin: 0; padding: 8px 16px;">
-                                <i class="ph ph-file-zip"></i> Exportar a ZIP
-                            </button>
+                            <div class="header-actions-group">
+                                <button id="playAllDownloadedBtn" class="changeBg" style="margin: 0; padding: 8px 16px;" title="Reproducir todas las descargas">
+                                    <i class="ph ph-play"></i> Reproducir todo
+                                </button>
+                                <button id="shuffleDownloadedBtn" class="changeBg" style="margin: 0; padding: 8px 16px;" title="Mezclar descargas">
+                                    <i class="ph ph-shuffle"></i> Mezclar
+                                </button>
+                                <button id="exportZipBtn" class="changeBg" style="margin: 0; padding: 8px 16px;">
+                                    <i class="ph ph-file-zip"></i> Exportar a ZIP
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Filtro local interactivo para descargas -->
@@ -426,6 +450,9 @@
                             </button>
                             <button class="tablinkSettings" onclick="settings.openTab('tabTheme', this)">
                                 <i class="ph ph-paint-brush"></i> Personalización
+                            </button>
+                            <button class="tablinkSettings" onclick="settings.openTab('tabAccessibility', this)">
+                                <i class="ph ph-hand-tap"></i> Accesibilidad
                             </button>
                         </div>
                         
@@ -601,6 +628,48 @@
                             
                             <div id="sidebarElements" class="settings-option">
                                 <!-- Opciones de elementos para la barra lateral del reproductor -->
+                            </div>
+                        </div>
+
+                        <!-- Tab Accesibilidad -->
+                        <div id="tabAccessibility" class="settings-group-container is-hidden">
+                            <div class="settings-card glass-box-premium">
+                                <div class="settings-card-header">
+                                    <i class="ph ph-sliders"></i>
+                                    <h3>Sensibilidad de Volumen (Touchpad y Ratón)</h3>
+                                </div>
+                                <div class="settings-row">
+                                    <div class="settings-info">
+                                        <span class="settings-label">Sensibilidad de gestos (Touchpad)</span>
+                                        <small class="settings-desc">Ajusta la velocidad con la que cambia el volumen al deslizar con dos dedos sobre el control de volumen.</small>
+                                    </div>
+                                    <div class="settings-control">
+                                        <div class="settings-range-wrapper">
+                                            <input type="range" id="touchpadSensitivity" class="settings-range-slider" min="0.01" max="0.10" step="0.005" value="0.035">
+                                            <span id="touchpadSensitivityValue" class="settings-range-value">3.5</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="settings-row">
+                                    <div class="settings-info">
+                                        <span class="settings-label">Sensibilidad de rueda (Ratón)</span>
+                                        <small class="settings-desc">Ajusta el paso de volumen al girar la rueda tradicional del ratón.</small>
+                                    </div>
+                                    <div class="settings-control">
+                                        <div class="settings-range-wrapper">
+                                            <input type="range" id="mouseWheelSensitivity" class="settings-range-slider" min="0.01" max="0.12" step="0.005" value="0.04">
+                                            <span id="mouseWheelSensitivityValue" class="settings-range-value">4.0</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="settings-row buttons-row">
+                                    <button id="resetSensitivityBtn" class="changeBg" type="button">
+                                        <i class="ph ph-arrows-counter-clockwise"></i> Restablecer Valores
+                                    </button>
+                                </div>
+                                <div class="settings-row note-row">
+                                    <small class="settings-note"><i class="ph ph-info"></i> Puedes probar el volumen inmediatamente deslizando sobre el control de volumen de la derecha o inferior.</small>
+                                </div>
                             </div>
                         </div>
                     </div>
