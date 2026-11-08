@@ -294,6 +294,9 @@
                                 <button id="exportZipBtn" class="changeBg" style="margin: 0; padding: 8px 16px;">
                                     <i class="ph ph-file-zip"></i> Exportar a ZIP
                                 </button>
+                                <button id="syncAndroidHeaderBtn" class="changeBg" style="margin: 0; padding: 8px 16px;" title="Sincronizar canciones y letras con Android por Wi-Fi">
+                                    <i class="ph ph-device-mobile"></i> Sincronizar Android
+                                </button>
                             </div>
                         </div>
 
@@ -951,6 +954,50 @@
     <script src="assets/js/modal.js" defer></script>
     <script src="assets/js/equalizer.js"></script>
     <script src="assets/js/lyrics.js" defer></script>
+    <!-- Modal Sincronizar con Android -->
+    <div id="syncAndroidModalOverlay" class="playlist-modal-overlay is-hidden">
+        <div class="playlist-modal-content export-modal-content glass-box" style="max-width: 490px;">
+            <div class="playlist-modal-header">
+                <div class="export-header-title">
+                    <i class="ph ph-device-mobile" style="color: #ff0090;"></i>
+                    <div>
+                        <h3>Sincronizar con Android</h3>
+                        <p>Transfiere canciones, carátulas y letras sincronizadas por Wi-Fi sin duplicar</p>
+                    </div>
+                </div>
+                <button id="closeSyncAndroidModalBtn" class="playlist-modal-close" title="Cerrar"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="playlist-modal-body export-modal-body" style="padding: 20px;">
+                <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 16px; margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                        <span style="font-size: 0.85rem; color: rgba(255,255,255,0.7); font-weight: 500;">Servidor LAN:</span>
+                        <span id="syncServerBadge" style="background: rgba(85,255,153,0.15); border: 1px solid rgba(85,255,153,0.3); color: #55ff99; font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 10px;">
+                            <span style="display: inline-block; width: 6px; height: 6px; background: #55ff99; border-radius: 50%; margin-right: 4px;"></span> ACTIVO
+                        </span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; margin: 10px 0 14px;">
+                        <div style="padding: 10px; background: #ffffff; border: 2px solid rgba(255,0,144,0.6); border-radius: 18px; box-shadow: 0 0 30px rgba(255,0,144,0.4), inset 0 0 10px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: center;">
+                            <img id="syncQrCodeImg" style="width: 175px; height: 175px; border-radius: 10px; display: block;" alt="Código QR de Sincronización">
+                        </div>
+                        <span style="font-size: 0.78rem; color: #ff0090; margin-top: 8px; font-weight: 600;">
+                            <i class="ph-fill ph-qr-code"></i> Escanea con la cámara de Mexlify Android
+                        </span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input id="syncServerIpInput" type="text" readonly style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 8px 12px; color: #fff; font-family: monospace; font-size: 0.95rem;" value="http://192.168.1.86:5055">
+                        <button id="copySyncIpBtn" class="changeBg" style="margin: 0; padding: 8px 14px; font-size: 0.85rem;">
+                            <i class="ph ph-copy"></i> Copiar
+                        </button>
+                    </div>
+                </div>
+                <div style="font-size: 0.85rem; color: rgba(255,255,255,0.65); line-height: 1.5;">
+                    <p style="margin-bottom: 8px;"><strong style="color: #fff;">1.</strong> Abre la app de <strong>Mexlify</strong> en tu teléfono Android (en la misma red Wi-Fi).</p>
+                    <p style="margin-bottom: 8px;"><strong style="color: #fff;">2.</strong> Toca el botón de sincronización <i class="ph ph-arrows-clockwise" style="color: #ff0090;"></i> e ingresa la dirección IP de arriba.</p>
+                    <p><strong style="color: #fff;">3.</strong> Toca <em>Sincronizar</em>. Las canciones nuevas, carátulas HD y letras sincronizadas (.lrc) se pasarán a máxima velocidad sin duplicar nada.</p>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

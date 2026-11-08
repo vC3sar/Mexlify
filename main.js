@@ -9,6 +9,8 @@ const {
   extractVideoId,
 } = require("./services/ytdlpResolver");
 const { initLyricsTable, getSongLyrics } = require("./services/lyricsService");
+const { SyncServer, getLocalIps } = require("./services/syncServer");
+const QRCode = require("qrcode");
 // node fetch con required
 const fetch = require("node-fetch");
 // Solo estos cambios mínimos para mejorar sin romper nada
@@ -27,57 +29,302 @@ const CLIENT_ID = "1417279389858529392"; // ← Cambiar por tu Discord Applicati
 let rpc = null;
 
 // ================ FUNCIONES ESENCIALES ================
+let lastDiscordReconnectAttempt = 0;
+let isDiscordConnecting = false;
+
 async function initDiscord() {
+  if (isDiscordConnecting) return false;
+  isDiscordConnecting = true;
   try {
+    if (rpc) {
+      try {
+        await rpc.destroy();
+      } catch (_) {}
+      rpc = null;
+    }
     rpc = new DiscordRPC.Client({ transport: "ipc" });
+    rpc.on("ready", () => {
+      console.log("✅ Discord RPC conectado y sincronizado.");
+    });
+    rpc.on("disconnected", () => {
+      console.log("⚠️ Discord RPC desconectado.");
+      rpc = null;
+    });
     await rpc.login({ clientId: CLIENT_ID });
-    console.log("✅ Discord RPC conectado.");
+    isDiscordConnecting = false;
     return true;
   } catch (error) {
     console.log("❌ Discord no disponible:", error.message);
     rpc = null;
+    isDiscordConnecting = false;
     return false;
   }
 }
 
 let rpcStartTimestamp = null; // timestamp global de inicio
 
-async function updateActivity(details, state, image, resetTime = false) {
-  if (!rpc) return;
-  let imgurl = image;
-  console.log("Imagen recibida:", image); // <-- Nuevo log
-  if (
-    typeof imgurl === "undefined" ||
-    imgurl === null ||
-    imgurl === "" ||
-    (typeof imgurl === "string" && (imgurl.startsWith("mexlify://") || imgurl.startsWith("file://")))
-  ) {
-    imgurl = "logo_app_mexlify_center";
+function formatRpcString(str, minLen = 2, maxLen = 128) {
+  if (typeof str !== "string") str = String(str || "");
+  str = str.trim();
+  if (str.length < minLen) {
+    str = str.padEnd(minLen, " ");
   }
+  if (str.length > maxLen) {
+    str = str.slice(0, maxLen);
+  }
+  return str;
+}
+
+// Cache en memoria para metadatos online de Discord
+const discordInfoCache = new Map();
+
+async function resolveOnlineMusicMetadata(title, artist) {
+  if (!title) return null;
+  const cleanT = String(title)
+    .replace(/\b(video|oficial|official|lyrics|audio|clip|feat\.?|ft\.?|remix|version|deluxe)\b/gi, "")
+    .replace(/[\(\[\{].*?[\)\]\}]/g, "")
+    .replace(/[-_|\/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const cleanA = String(artist || "")
+    .replace(/\b(feat\.?|ft\.?)\b/gi, "")
+    .replace(/[-_|\/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const query = `${cleanT} ${cleanA}`.trim();
+  if (!query) return null;
+
+  const key = query.toLowerCase();
+  if (discordInfoCache.has(key)) {
+    return discordInfoCache.get(key);
+  }
+
   try {
-    console.log("Usando imagen:", imgurl); // <-- Nuevo log
-
-    if (resetTime || !rpcStartTimestamp) {
-      rpcStartTimestamp = Math.floor(Date.now() / 1000); // inicializamos
+    const resp = await fetch(
+      `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=musicTrack&limit=1`,
+      { headers: { "User-Agent": "Mozilla/5.0" } }
+    );
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.results && data.results.length > 0) {
+        const item = data.results[0];
+        let cover = item.artworkUrl100 || item.artworkUrl60 || null;
+        if (cover) {
+          cover = cover.replace(/\/\d+x\d+bb\./i, "/600x600bb.");
+        }
+        const album = item.collectionName || null;
+        const resolved = { cover, album, artist: item.artistName || null };
+        discordInfoCache.set(key, resolved);
+        return resolved;
+      }
     }
-    // agregar presencia con denotacion en debug
-    details = debug ? `[MODO DESARROLLO] - ${details}` : details;
-    await rpc.setActivity({
-      details: details,
-      state: state,
-      startTimestamp: rpcStartTimestamp, // usamos la misma referencia
-      largeImageKey: imgurl,
-      largeImageText: "Mexlify Music",
-      type: 2, // <--- "Listening to"
-      buttons: [{ label: "Ver proyecto", url: "https://mexlify.top" }],
-    });
+  } catch (err) {
+    console.warn("Error al consultar iTunes para Discord RPC:", err.message);
+  }
 
-    console.log("✅ Rich Presence actualizado:", details, state);
+  discordInfoCache.set(key, null);
+  return null;
+}
+
+async function updateActivity(details, state, image, resetTime = false) {
+  if (!rpc) {
+    const now = Date.now();
+    if (now - lastDiscordReconnectAttempt > 15000) {
+      lastDiscordReconnectAttempt = now;
+      await initDiscord();
+    }
+    if (!rpc) return;
+  }
+
+  // Parsear entrada (soporta objeto o argumentos posicionales)
+  let opts = {};
+  if (typeof details === "object" && details !== null) {
+    opts = details;
+  } else {
+    opts = {
+      title: details,
+      artist: state,
+      image: image,
+      resetTime: resetTime,
+    };
+  }
+
+  const isIdle = Boolean(
+    opts.isIdle ||
+    opts.title === "En hub" ||
+    opts.details === "En hub" ||
+    (!opts.title && !opts.details)
+  );
+
+  try {
+    if (isIdle) {
+      const idleStart = Math.floor(Date.now() / 1000);
+      const idleActivity = {
+        details: formatRpcString("Explorando música"),
+        state: formatRpcString("En el hub"),
+        timestamps: { start: idleStart },
+        assets: {
+          large_image: "logo_app_mexlify_center",
+          large_text: "Mexlify Music",
+        },
+        buttons: [
+          { label: "✨ Mexlify Web", url: "https://mexlify.top" },
+          { label: "💬 Discord Oficial", url: "https://discord.gg/hpRMKdqWRy" },
+        ],
+        type: 2,
+        instance: false,
+      };
+
+      try {
+        await rpc.request("SET_ACTIVITY", { pid: process.pid, activity: idleActivity });
+      } catch (_) {
+        await rpc.setActivity({
+          details: idleActivity.details,
+          state: idleActivity.state,
+          startTimestamp: idleActivity.timestamps.start,
+          largeImageKey: idleActivity.assets.large_image,
+          largeImageText: idleActivity.assets.large_text,
+          buttons: idleActivity.buttons,
+        });
+      }
+      return;
+    }
+
+    // Modo reproducción / pausa (título limpio, sin prefijos [DEV])
+    let trackTitle = opts.title || opts.details || "Música en Mexlify";
+    const detailsStr = formatRpcString(trackTitle);
+
+    let rawArtist = opts.artist || opts.state || "Mexlify";
+    let stateStr = "";
+    const lowerArtist = rawArtist.toLowerCase();
+    const artistPrefix = (lowerArtist.startsWith("de ") || lowerArtist.startsWith("by ")) ? "" : "de ";
+    if (opts.isPaused) {
+      stateStr = `⏸️ En pausa • ${artistPrefix}${rawArtist}`;
+    } else {
+      stateStr = `${artistPrefix}${rawArtist}`;
+    }
+    stateStr = formatRpcString(stateStr);
+
+    // Timeline / Scrubber estilo Spotify
+    let activityTimestamps = undefined;
+    const dur = Number(opts.duration);
+    const cur = Number(opts.currentTime);
+    if (!opts.isPaused && !isNaN(dur) && dur > 0) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const curSec = (!isNaN(cur) && cur >= 0) ? Math.floor(cur) : 0;
+      const startSec = Math.max(0, nowSec - curSec);
+      const endSec = startSec + Math.max(1, Math.floor(dur));
+      activityTimestamps = {
+        start: startSec,
+        end: endSec,
+      };
+    } else if (!opts.isPaused) {
+      if (opts.resetTime || !rpcStartTimestamp) {
+        rpcStartTimestamp = Math.floor(Date.now() / 1000);
+      }
+      activityTimestamps = { start: rpcStartTimestamp };
+    }
+
+    // Artwork & Álbum (Resolución online de alta calidad)
+    let largeImage = opts.imageUrl || opts.image;
+    let isDirectWebImage = Boolean(
+      largeImage &&
+      typeof largeImage === "string" &&
+      (largeImage.startsWith("http://") || largeImage.startsWith("https://")) &&
+      !largeImage.includes("logo_app_mexlify_center")
+    );
+
+    let resolvedAlbum = (opts.album && opts.album !== "Mexlify Music" && opts.album !== "Mexlify") ? opts.album : null;
+
+    if (!isDirectWebImage) {
+      const onlineMeta = await resolveOnlineMusicMetadata(trackTitle, rawArtist);
+      if (onlineMeta?.cover) {
+        largeImage = onlineMeta.cover;
+        isDirectWebImage = true;
+      }
+      if (onlineMeta?.album && !resolvedAlbum) {
+        resolvedAlbum = onlineMeta.album;
+      }
+    }
+
+    // Fallback con ID de YouTube si no se encontró en iTunes
+    if (!isDirectWebImage) {
+      const ytId = opts.id || (opts.songUrl && (opts.songUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})/)?.[1]));
+      if (ytId && typeof ytId === "string" && ytId.length === 11) {
+        largeImage = `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`;
+        isDirectWebImage = true;
+      }
+    }
+
+    if (!isDirectWebImage) {
+      largeImage = "logo_app_mexlify_center";
+    }
+
+    // Línea 3: Nombre del álbum real o título del tema (nunca repetir "Mexlify")
+    let largeText = "";
+    if (resolvedAlbum && resolvedAlbum !== "Mexlify Music" && resolvedAlbum !== "Mexlify") {
+      largeText = resolvedAlbum.trim();
+    } else {
+      largeText = trackTitle.trim();
+    }
+
+    // Botones de acción
+    let songUrl = opts.songUrl;
+    if (
+      !songUrl ||
+      typeof songUrl !== "string" ||
+      (!songUrl.startsWith("http://") && !songUrl.startsWith("https://"))
+    ) {
+      songUrl = "https://mexlify.top";
+    }
+
+    const isDirectTrack = songUrl.includes("youtube.com") || songUrl.includes("youtu.be");
+    const buttons = [
+      {
+        label: isDirectTrack ? "🎧 Escuchar tema" : "▶️ Escuchar en Mexlify",
+        url: songUrl,
+      },
+      {
+        label: "💬 Discord Oficial",
+        url: "https://discord.gg/hpRMKdqWRy",
+      },
+    ];
+
+    const activityPayload = {
+      details: detailsStr,
+      state: stateStr,
+      timestamps: activityTimestamps,
+      assets: {
+        large_image: largeImage,
+        large_text: formatRpcString(largeText),
+      },
+      buttons: buttons,
+      type: 2, // 2 = LISTENING (Spotify presence)
+      instance: false,
+    };
+
+    try {
+      await rpc.request("SET_ACTIVITY", {
+        pid: process.pid,
+        activity: activityPayload,
+      });
+      console.log("✅ Rich Presence actualizado:", detailsStr, stateStr, "Cover:", largeImage);
+    } catch (ipcErr) {
+      await rpc.setActivity({
+        details: activityPayload.details,
+        state: activityPayload.state,
+        startTimestamp: activityPayload.timestamps?.start,
+        endTimestamp: activityPayload.timestamps?.end,
+        largeImageKey: activityPayload.assets.large_image,
+        largeImageText: activityPayload.assets.large_text,
+        buttons: activityPayload.buttons,
+      });
+      console.log("✅ Rich Presence actualizado (fallback):", detailsStr, stateStr);
+    }
   } catch (error) {
     console.log("❌ Error actualizando Discord:", error.message);
   }
 }
-
 // ================ IPC HANDLERS ================
 ipcMain.handle(
   "discord-set-activity",
@@ -95,6 +342,21 @@ ipcMain.handle("open-external", async (event, url) => {
     console.error("Error al abrir URL externa:", error);
     return false;
   }
+});
+
+ipcMain.handle("toggle-fullscreen", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    const nextState = !win.isFullScreen();
+    win.setFullScreen(nextState);
+    return nextState;
+  }
+  return false;
+});
+
+ipcMain.handle("is-fullscreen", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win ? win.isFullScreen() : false;
 });
 
 // ------------------- Paths de binarios (TU CÓDIGO ORIGINAL) -------------------
@@ -187,7 +449,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    fullscreenable: false,
+    fullscreenable: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -199,6 +461,12 @@ function createWindow() {
   });
   win.icon = path.join(__dirname, "logo.png");
   win.webContents.setFrameRate(60);
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.key === "F11" && input.type === "keyDown") {
+      win.setFullScreen(!win.isFullScreen());
+      event.preventDefault();
+    }
+  });
   win.loadFile("index.html");
   if (debug) win.webContents.openDevTools();
   return win;
@@ -1371,5 +1639,62 @@ ipcMain.handle("get-lyrics", async (_event, songParams) => {
     console.error("❌ Error en get-lyrics handler:", err);
     return { success: false, notAvailable: true, message: err.message };
   }
+});
+
+// ==================== SYNC SERVER (MEXLIFY DESKTOP <-> ANDROID) ====================
+const syncServer = new SyncServer({
+  port: 5055,
+  downloadsDir: downloadsDir,
+  metadataDir: metadataDir,
+  db: db,
+  getDownloadedFn: async () => {
+    try {
+      if (!fs.existsSync(metadataDir)) return [];
+      const files = fs.readdirSync(metadataDir).filter((f) => f.endsWith(".txt"));
+      return files.map((file) => {
+        const metadataPath = path.join(metadataDir, file);
+        const content = fs.readFileSync(metadataPath, "utf-8");
+        const obj = parseMetadataFile(content);
+        return {
+          ...obj,
+          Filename: obj.Filename || file.replace(/\.txt$/, ".mp3"),
+        };
+      });
+    } catch (_) {
+      return [];
+    }
+  },
+  getSongLyricsFn: getSongLyrics,
+});
+
+app.whenReady().then(() => {
+  setTimeout(() => {
+    syncServer.start().catch((err) => {
+      console.warn("Aviso al iniciar SyncServer:", err.message);
+    });
+  }, 3000);
+});
+
+ipcMain.handle("sync-get-status", async () => {
+  const status = syncServer.getStatus();
+  try {
+    const qrDataUrl = await QRCode.toDataURL(status.url, {
+      margin: 3,
+      color: { dark: "#090014", light: "#ffffff" },
+      width: 280,
+      errorCorrectionLevel: "M",
+    });
+    return { ...status, qrDataUrl };
+  } catch (err) {
+    return status;
+  }
+});
+
+ipcMain.handle("sync-start-server", async () => {
+  return await syncServer.start();
+});
+
+ipcMain.handle("sync-stop-server", async () => {
+  return await syncServer.stop();
 });
 

@@ -1,0 +1,26 @@
+{
+  "name": "mexlify-android-player",
+  "version": "1.0.0",
+  "description": "Reproductor móvil Mexlify con sincronización LAN anti-duplicados y letras offline sincronizadas",
+  "type": "module",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview",
+    "cap:add": "cap add android",
+    "cap:sync": "cap sync android",
+    "build:apk": "node scripts/build_apk.js",
+    "test": "node tests/test_android_player.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "jsqr": "^1.4.0",
+    "mexlify": "file:.."
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#080014">
+  <title>Mexlify Music</title>
+  <link rel="stylesheet" href="./src/style.css">
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
+  <!-- Encabezado Minimalista Estilo Apple Music -->
+  <header class="app-header">
+    <div class="brand-title">
+      <div class="brand-text">
+        <span class="header-eyebrow">BIBLIOTECA</span>
+        <h1>Canciones</h1>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <!-- Píldora discreta cuando suena música -->
+      <button id="dynamicAudioPill" class="dynamic-notch-pill is-hidden" title="Ver reproductor">
+        <span class="eq-bars">
+          <i></i><i></i><i></i>
+        </span>
+        <span id="dynamicPillText" class="dynamic-pill-text">Sonando</span>
+      </button>
+
+      <button id="openSyncModalBtn" class="icon-btn" title="Sincronizar con PC">
+        <i class="ph ph-arrows-clockwise"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Contenedor Principal (Biblioteca Offline) -->
+  <main class="main-content" id="mainScrollView">
+    <!-- Buscador Estilo iOS -->
+    <div class="search-box">
+      <i class="ph ph-magnifying-glass"></i>
+      <input type="text" id="searchInput" placeholder="Buscar en canciones" autocomplete="off">
+      <button id="clearSearchBtn" class="search-clear-btn is-hidden" title="Limpiar búsqueda">
+        <i class="ph-fill ph-x-circle"></i>
+      </button>
+    </div>
+
+    <!-- Botones Gemelos Estilo Apple Music (Reproducir / Aleatorio) -->
+    <div class="apple-hero-actions">
+      <button id="playAllBtn" class="apple-action-btn">
+        <i class="ph-fill ph-play"></i>
+        <span>Reproducir</span>
+      </button>
+      <button id="quickShuffleAllBtn" class="apple-action-btn">
+        <i class="ph-fill ph-shuffle"></i>
+        <span>Aleatorio</span>
+      </button>
+    </div>
+
+    <!-- Filtros Discretos -->
+    <div class="library-toolbar">
+      <div class="filter-chips">
+        <button id="filterAllBtn" class="filter-chip is-active">
+          Todas <span id="songsCountEl" class="chip-count">0</span>
+        </button>
+        <button id="filterLrcBtn" class="filter-chip">
+          <i class="ph-fill ph-quotes"></i> Con letra
+        </button>
+      </div>
+    </div>
+
+    <!-- Lista de Canciones -->
+    <div id="songListContainer" class="song-list">
+      <!-- Inyectado dinámicamente -->
+    </div>
+
+    <!-- Estado Vacío -->
+    <div id="emptyLibraryState" class="library-empty" style="display: none;">
+      <div class="empty-glow-circle">
+        <i class="ph ph-music-notes"></i>
+      </div>
+      <h3>Sin música descargada</h3>
+      <p>Transfiere tus canciones desde Mexlify en tu PC mediante Wi-Fi o código QR.</p>
+      <button id="emptySyncBtn" class="btn-primary">
+        <i class="ph ph-qr-code"></i> Sincronizar con PC
+      </button>
+    </div>
+  </main>
+
+  <!-- Mini Reproductor Flotante (Frosted Glass Estilo Apple Music) -->
+  <div id="miniPlayer" class="mini-player is-hidden">
+    <div class="mini-left" id="miniExpandBtn">
+      <div class="mini-thumb-wrap">
+        <img id="miniCoverImg" class="mini-thumb" src="assets/default_cover.png" alt="Cover">
+      </div>
+      <div class="mini-info">
+        <div id="miniTitle" class="mini-title">Sin reproducción</div>
+        <div id="miniArtist" class="mini-artist">Mexlify</div>
+      </div>
+    </div>
+    <div class="mini-controls">
+      <button id="miniPrevBtn" class="mini-btn mini-btn-sub" title="Anterior">
+        <i class="ph-fill ph-skip-back"></i>
+      </button>
+      <button id="miniPlayPauseBtn" class="mini-btn mini-btn-play" title="Play/Pausa">
+        <i class="ph-fill ph-play"></i>
+      </button>
+      <button id="miniNextBtn" class="mini-btn" title="Siguiente">
+        <i class="ph-fill ph-skip-forward"></i>
+      </button>
+    </div>
+    <div class="mini-progress-bar">
+      <div id="miniProgressFill" class="mini-progress-fill"></div>
+    </div>
+  </div>
+
+  <!-- Reproductor Full Screen Modal (Con Fondo Ambiental Dinámico de la Carátula) -->
+  <div id="fullPlayerModal" class="full-player-modal">
+    <!-- Lienzo Ambiental Difuminado Estilo Apple Music -->
+    <div class="ambient-artwork-canvas">
+      <img id="fullPlayerAmbientArt" class="ambient-art-img" src="assets/default_cover.png" alt="">
+      <div class="ambient-art-overlay"></div>
+    </div>
+
+    <div class="sheet-drag-zone" id="fullPlayerDragZone">
+      <div class="sheet-drag-handle"></div>
+    </div>
+
+    <div class="full-header">
+      <button id="closeFullPlayerBtn" class="icon-btn icon-btn-ghost" title="Minimizar">
+        <i class="ph-bold ph-caret-down"></i>
+      </button>
+      <div class="full-header-center">
+        <span class="full-header-subtitle">REPRODUCIENDO</span>
+      </div>
+      <button id="fullOpenLyricsTopBtn" class="icon-btn icon-btn-ghost" title="Ver letras">
+        <i class="ph-fill ph-quotes"></i>
+      </button>
+    </div>
+
+    <div class="full-cover-wrapper" id="fullCoverSwipeArea">
+      <img id="fullCoverImg" class="full-cover-img" src="assets/default_cover.png" alt="Album Art">
+    </div>
+
+    <div class="full-bottom-stack">
+      <div class="full-track-meta">
+        <div class="full-track-text">
+          <h2 id="fullTitle" class="full-title">Título del tema</h2>
+          <p id="fullArtist" class="full-artist">Artista</p>
+        </div>
+        <div class="full-track-badges">
+          <span id="fullLrcBadge" class="quality-badge lrc-active is-hidden">LRC</span>
+          <span class="quality-badge">LOSSLESS</span>
+        </div>
+      </div>
+
+      <!-- Barra de Progreso Minimalista Estilo Apple Music -->
+      <div class="scrubber-section">
+        <div class="scrubber-track-wrapper">
+          <input type="range" id="fullScrubber" class="scrubber-slider" min="0" max="1000" value="0" step="1">
+        </div>
+        <div class="time-row">
+          <span id="fullCurrentTime">0:00</span>
+          <span id="fullDurationTime">0:00</span>
+        </div>
+      </div>
+
+      <!-- Controles Principales Puros -->
+      <div class="full-controls-row">
+        <button id="shuffleBtn" class="control-btn" title="Aleatorio">
+          <i class="ph-bold ph-shuffle"></i>
+        </button>
+        <button id="prevBtn" class="control-btn control-btn-skip" title="Anterior">
+          <i class="ph-fill ph-rewind"></i>
+        </button>
+        <button id="playPauseBtn" class="play-pause-circle" title="Play/Pausa">
+          <i class="ph-fill ph-play"></i>
+        </button>
+        <button id="nextBtn" class="control-btn control-btn-skip" title="Siguiente">
+          <i class="ph-fill ph-fast-forward"></i>
+        </button>
+        <button id="repeatBtn" class="control-btn" title="Repetir">
+          <i class="ph-bold ph-repeat"></i>
+        </button>
+      </div>
+
+      <!-- Barra Inferior de Letra en Vivo -->
+      <div id="openLyricsBar" class="lyrics-preview-bar">
+        <div class="lyrics-preview-left">
+          <i class="ph-fill ph-quotes"></i>
+          <span id="liveLyricPreviewText">Letras sincronizadas</span>
+        </div>
+        <div class="lyrics-preview-right">
+          <i class="ph-bold ph-caret-up"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Letras Sincronizadas Estilo Apple Music Sing -->
+  <div id="lyricsModal" class="lyrics-modal">
+    <div class="ambient-artwork-canvas">
+      <img id="lyricsAmbientArt" class="ambient-art-img" src="assets/default_cover.png" alt="">
+      <div class="ambient-art-overlay ambient-art-overlay-dark"></div>
+    </div>
+
+    <div class="sheet-drag-zone" id="lyricsDragZone">
+      <div class="sheet-drag-handle"></div>
+    </div>
+
+    <div class="lyrics-header" id="lyricsHeaderZone">
+      <div class="lyrics-header-left">
+        <img id="lyricsHeaderCover" class="lyrics-mini-cover" src="assets/default_cover.png" alt="Cover">
+        <div class="lyrics-header-meta">
+          <h4 id="lyricsSongTitle">Letras en vivo</h4>
+          <p id="lyricsSongArtist">Sincronizado</p>
+        </div>
+      </div>
+      <div class="lyrics-header-actions">
+        <button id="refreshLyricsBtn" class="icon-btn icon-btn-ghost" title="Buscar letra online">
+          <i class="ph ph-arrows-clockwise"></i>
+        </button>
+        <button id="closeLyricsModalBtn" class="icon-btn icon-btn-ghost" title="Cerrar">
+          <i class="ph-bold ph-caret-down"></i>
+        </button>
+      </div>
+    </div>
+
+    <div id="lyricsContentContainer" class="lyrics-container">
+      <!-- Letras inyectadas dinámicamente -->
+    </div>
+
+    <!-- Controles Inferiores Discretos en Modo Letras -->
+    <div class="lyrics-bottom-bar">
+      <div class="lyrics-progress-mini">
+        <div id="lyricsMiniProgressFill" class="lyrics-progress-mini-fill"></div>
+      </div>
+      <div class="lyrics-bottom-controls">
+        <span id="lyricsCurrentTime" class="lyrics-time-label">0:00</span>
+        <div class="lyrics-transport">
+          <button id="lyricsPrevBtn" class="icon-btn icon-btn-ghost icon-btn-sm">
+            <i class="ph-fill ph-rewind"></i>
+          </button>
+          <button id="lyricsPlayPauseBtn" class="lyrics-play-btn">
+            <i class="ph-fill ph-play"></i>
+          </button>
+          <button id="lyricsNextBtn" class="icon-btn icon-btn-ghost icon-btn-sm">
+            <i class="ph-fill ph-fast-forward"></i>
+          </button>
+        </div>
+        <span id="lyricsDurationTime" class="lyrics-time-label">0:00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Centro de Sincronización LAN -->
+  <div id="syncModal" class="sync-modal">
+    <div class="sync-sheet" id="syncSheetBox">
+      <div class="sheet-drag-zone" id="syncDragZone">
+        <div class="sheet-drag-handle"></div>
+      </div>
+
+      <div class="sync-header">
+        <h3>Sincronizar con PC</h3>
+        <button id="closeSyncModalBtn" class="icon-btn icon-btn-ghost">
+          <i class="ph ph-x"></i>
+        </button>
+      </div>
+
+      <p class="sync-desc">
+        Escanea el código QR en tu PC o ingresa la dirección IP local (ambos dispositivos en la misma red Wi-Fi).
+      </p>
+
+      <div style="display: flex; justify-content: center; margin-bottom: 14px;">
+        <button id="openScannerBtn" class="btn-primary btn-qr-hero">
+          <i class="ph ph-qr-code" style="font-size: 1.2rem;"></i> Escanear código QR
+        </button>
+      </div>
+
+      <div class="sync-input-group">
+        <input type="text" id="serverIpInput" placeholder="192.168.1.86:5055">
+        <button id="checkDiffBtn">Conectar</button>
+      </div>
+
+      <div id="syncDiffSection" class="sync-diff-card" style="display: none;">
+        <div class="diff-stat-row">
+          <span>Canciones en la PC</span>
+          <span id="diffTotalRemote" style="font-weight: 600; color: #fff;">0</span>
+        </div>
+        <div class="diff-stat-row">
+          <span>En este dispositivo</span>
+          <span id="diffAlreadySynced" class="diff-val-dup">0</span>
+        </div>
+        <div class="diff-stat-row">
+          <span>Nuevas por transferir</span>
+          <span id="diffToDownload" class="diff-val-new">0</span>
+        </div>
+
+        <button id="startSyncActionBtn" class="btn-primary" style="width: 100%; justify-content: center; margin-top: 14px;">
+          <i class="ph ph-download-simple"></i> Descargar nuevas
+        </button>
+
+        <div id="syncProgressWrapper" class="sync-progress-box" style="display: none;">
+          <div class="sync-progress-bar-bg">
+            <div id="syncProgressBarFill" class="sync-progress-bar-fill"></div>
+          </div>
+          <div id="syncStatusMsg" class="sync-status-msg">Transfiriendo canciones...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Escáner de Código QR con Cámara -->
+  <div id="scannerModal" class="scanner-modal">
+    <div class="scanner-header">
+      <div class="scanner-title">
+        <i class="ph ph-qr-code"></i>
+        <span>Escanear código QR</span>
+      </div>
+      <button id="closeScannerBtn" class="icon-btn icon-btn-ghost">
+        <i class="ph ph-x"></i>
+      </button>
+    </div>
+    <div class="scanner-viewport">
+      <video id="scannerVideo" playsinline autoplay></video>
+      <div class="scanner-target-box">
+        <div class="scanner-laser"></div>
+        <div class="scanner-corner top-left"></div>
+        <div class="scanner-corner top-right"></div>
+        <div class="scanner-corner bottom-left"></div>
+        <div class="scanner-corner bottom-right"></div>
+      </div>
+    </div>
+    <p class="scanner-hint">Apunta con la cámara al código QR que muestra Mexlify en tu PC.</p>
+  </div>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

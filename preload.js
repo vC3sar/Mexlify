@@ -50,14 +50,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   // DISCORD STATUS
-  setDiscordActivity: async (details, state, image, resetTime) => {
-    return await ipcRenderer.invoke(
-      "discord-set-activity",
-      details,
-      state,
-      image,
-      resetTime
-    );
+  setDiscordActivity: async (...args) => {
+    return await ipcRenderer.invoke("discord-set-activity", ...args);
   },
 
   deleteDownload: async (filename) => {
@@ -70,6 +64,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   openExternal: async (url) => {
     return await ipcRenderer.invoke("open-external", url);
+  },
+
+  // Alternar pantalla completa con F11
+  toggleFullScreen: async () => {
+    return await ipcRenderer.invoke("toggle-fullscreen");
+  },
+  isFullScreen: async () => {
+    return await ipcRenderer.invoke("is-fullscreen");
   },
 
   // SQLite Database API
@@ -106,4 +108,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getLyrics: async (songParams) => {
     return await ipcRenderer.invoke("get-lyrics", songParams);
   },
+
+  // Servidor de sincronización LAN con Android
+  getSyncStatus: async () => await ipcRenderer.invoke("sync-get-status"),
+  startSyncServer: async () => await ipcRenderer.invoke("sync-start-server"),
+  stopSyncServer: async () => await ipcRenderer.invoke("sync-stop-server"),
 });

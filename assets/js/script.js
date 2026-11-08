@@ -178,6 +178,98 @@ function formatTime(seconds) {
   return `${minutes}:${secs < 10 ? "0" : ""}${secs}`;
 }
 
+// ======= Discord Rich Presence =======
+let discordPresenceTimer = null;
+
+function getBestArtworkUrl(song) {
+  if (!song) return "logo_app_mexlify_center";
+  let thumb = song.thumbnail || song.Thumbnail || song.cover || "";
+  if (thumb && typeof thumb === "string" && (thumb.startsWith("http://") || thumb.startsWith("https://"))) {
+    // Para imágenes de Apple/iTunes, mejorar la resolución al máximo (600x600)
+    if (thumb.includes("mzstatic.com")) {
+      thumb = thumb.replace(/\/\d+x\d+bb\./i, "/600x600bb.");
+    }
+    // Para imágenes de YouTube, asegurar alta resolución hqdefault
+    if (thumb.includes("ytimg.com") && thumb.includes("/default.jpg")) {
+      thumb = thumb.replace("/default.jpg", "/hqdefault.jpg");
+    }
+    return thumb;
+  }
+  // Si es archivo local o mexlify://, verificar si existe ID de YouTube
+  const ytId = song.id || (song.url && (song.url.match(/[?&]v=([a-zA-Z0-9_-]{11})/)?.[1]));
+  if (ytId && typeof ytId === "string" && ytId.length === 11) {
+    return `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`;
+  }
+  return "logo_app_mexlify_center";
+}
+
+function getSongExternalUrl(song) {
+  if (!song) return "https://mexlify.top";
+  if (song.url && typeof song.url === "string" && (song.url.startsWith("http://") || song.url.startsWith("https://"))) {
+    return song.url;
+  }
+  const ytId = song.id || (song.url && (song.url.match(/[?&]v=([a-zA-Z0-9_-]{11})/)?.[1]));
+  if (ytId && typeof ytId === "string" && ytId.length === 11) {
+    return `https://www.youtube.com/watch?v=${ytId}`;
+  }
+  return "https://mexlify.top";
+}
+
+function syncDiscordPresence(forceImmediate = false) {
+  if (discordPresenceTimer) {
+    clearTimeout(discordPresenceTimer);
+    discordPresenceTimer = null;
+  }
+
+  const performUpdate = async () => {
+    try {
+      if (!window.electronAPI || !window.electronAPI.setDiscordActivity) return;
+
+      const hasSong = Boolean(currentSong && (currentSong.title || currentSong.Title));
+      const isPlayerActive = Boolean(player && player.src && !player.ended);
+
+      if (!hasSong && !isPlayerActive) {
+        await window.electronAPI.setDiscordActivity({
+          isIdle: true,
+          title: "Explorando música",
+          artist: "Mexlify Music",
+        });
+        return;
+      }
+
+      const song = currentSong || {};
+      const dur = (!isNaN(player.duration) && player.duration > 0) ? player.duration : (song.duration || song.Duration || 0);
+      const cur = (!isNaN(player.currentTime) && player.currentTime >= 0) ? player.currentTime : 0;
+      const isPaused = Boolean(player.paused);
+
+      const title = cleanSongTitle(song.title || song.Title || songTitle?.textContent || "Música en Mexlify");
+      const artist = song.uploader || song.Uploader || songArtist?.textContent || "Artista desconocido";
+      const album = song.album || (typeof currentPlayContext !== "undefined" && currentPlayContext?.name && currentPlayContext.name !== "Mexlify Music" ? currentPlayContext.name : null);
+      const imageUrl = getBestArtworkUrl(song);
+      const songUrl = getSongExternalUrl(song);
+
+      await window.electronAPI.setDiscordActivity({
+        title,
+        artist,
+        album,
+        duration: dur,
+        currentTime: cur,
+        isPaused,
+        imageUrl,
+        songUrl,
+      });
+    } catch (err) {
+      console.warn("Error al sincronizar Discord Rich Presence:", err);
+    }
+  };
+
+  if (forceImmediate) {
+    performUpdate();
+  } else {
+    discordPresenceTimer = setTimeout(performUpdate, 250);
+  }
+}
+
 function normalize(str) {
   return str.replace(/[^\wáéíóúüñ]/gi, "").toLowerCase();
 }
@@ -319,16 +411,8 @@ async function playSong(song, isDownloaded = false, forceIndex = -1) {
       .replace(/\(\s*\)/g, "")
       .trim();
 
-    // Discord Rich Presence
-    setTimeout(async () => {
-      const dur = (!isNaN(player.duration) && player.duration > 0) ? player.duration : (song.duration || 0);
-      await window.electronAPI.setDiscordActivity(
-        `Reproduciendo 🎶 | (${formatTime(dur)})`,
-        `${songTitleDC} - ${songArtistText}`,
-        coverImageUrl,
-        false
-      );
-    }, 5000);
+    // Discord Rich Presence 
+    syncDiscordPresence(true);
 
     // Pausar canción anterior
     if (currentAudio) {
@@ -2035,14 +2119,9 @@ player.addEventListener("ended", () => {
   fcpProgressBar.style.setProperty('--value', '0%');
   currentTimeEl.textContent = "0:00";
   fcpCurrentTimeEl.textContent = "0:00";
-  setTimeout(async () => {
-    await window.electronAPI.setDiscordActivity(
-      "En hub",
-      "Esperando canción...",
-      "logo_app_mexlify_center",
-      false
-    );
-  }, 5 * 1000);
+  if (!isRepeating && repeatMode === "off" && (!window.songQueue || window.songQueue.length === 0)) {
+    syncDiscordPresence(true);
+  }
   // Reproducir siguiente en cola o repetir según repeatMode
   if (repeatMode === "one") {
     player.currentTime = 0;
@@ -2061,6 +2140,11 @@ player.addEventListener("ended", () => {
 player.addEventListener("loadedmetadata", () => {
   totalTimeEl.textContent = formatTime(player.duration);
   fcpTotalTimeEl.textContent = formatTime(player.duration);
+  syncDiscordPresence(false);
+});
+
+player.addEventListener("seeked", () => {
+  syncDiscordPresence(false);
 });
 
 player.addEventListener("playing", () => {
@@ -2088,28 +2172,12 @@ player.addEventListener("play", () => {
   playPauseBtn.innerHTML = '<i class="ph ph-pause"></i>';
   fcp_playPauseBtn.innerHTML = '<i class="ph ph-pause"></i>';
   setPlaybackBadgeState("playing");
-  setTimeout(async () => {
-    const dur = (!isNaN(player.duration) && player.duration > 0) ? player.duration : (currentSong?.duration || 0);
-    await window.electronAPI.setDiscordActivity(
-      `En reproducción | (${formatTime(dur)})`,
-      `${songTitle.textContent} - ${songArtist.textContent}`,
-      `${cover.src}`,
-      false
-    );
-  }, 5 * 1000);
+  syncDiscordPresence(false);
   renderQueue();
 });
 
 player.addEventListener("pause", () => {
-  setTimeout(async () => {
-    const dur = (!isNaN(player.duration) && player.duration > 0) ? player.duration : (currentSong?.duration || 0);
-    await window.electronAPI.setDiscordActivity(
-      `En pausa | (${formatTime(dur)})`,
-      `${songTitle.textContent} - ${songArtist.textContent}`,
-      `${cover.src}`,
-      false
-    );
-  }, 5 * 1000);
+  syncDiscordPresence(false);
   playPauseBtn.innerHTML = '<i class="ph ph-play"></i>';
   fcp_playPauseBtn.innerHTML = '<i class="ph ph-play"></i>';
   if (!currentlyResolvingSong) {
@@ -6358,6 +6426,16 @@ async function renderMostPlayedCardCover() {
   }
 }
 
+// Atajo global de teclado: F11 para alternar pantalla completa
+window.addEventListener("keydown", (e) => {
+  if (e.key === "F11") {
+    e.preventDefault();
+    if (window.electronAPI && typeof window.electronAPI.toggleFullScreen === "function") {
+      window.electronAPI.toggleFullScreen();
+    }
+  }
+});
+
 // ======= Funciones de Rediseño Premium (Mexlify UI/UX) =======
 
 /**
@@ -6575,3 +6653,59 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 
+
+
+// ==================== SYNC ANDROID MODAL WIRE ====================
+document.addEventListener("DOMContentLoaded", () => {
+  const syncAndroidHeaderBtn = document.getElementById("syncAndroidHeaderBtn");
+  const syncAndroidModalOverlay = document.getElementById("syncAndroidModalOverlay");
+  const closeSyncAndroidModalBtn = document.getElementById("closeSyncAndroidModalBtn");
+  const syncServerIpInput = document.getElementById("syncServerIpInput");
+  const copySyncIpBtn = document.getElementById("copySyncIpBtn");
+
+  async function updateSyncServerDisplay() {
+    if (!window.electronAPI || !window.electronAPI.getSyncStatus) return;
+    try {
+      const status = await window.electronAPI.getSyncStatus();
+      if (status && status.url && syncServerIpInput) {
+        syncServerIpInput.value = status.url;
+      }
+      const qrImg = document.getElementById("syncQrCodeImg");
+      if (qrImg && status && status.qrDataUrl) {
+        qrImg.src = status.qrDataUrl;
+      }
+    } catch (_) {}
+  }
+
+  if (syncAndroidHeaderBtn) {
+    syncAndroidHeaderBtn.addEventListener("click", () => {
+      updateSyncServerDisplay();
+      if (syncAndroidModalOverlay) syncAndroidModalOverlay.classList.remove("is-hidden");
+    });
+  }
+
+  if (closeSyncAndroidModalBtn) {
+    closeSyncAndroidModalBtn.addEventListener("click", () => {
+      if (syncAndroidModalOverlay) syncAndroidModalOverlay.classList.add("is-hidden");
+    });
+  }
+
+  if (syncAndroidModalOverlay) {
+    syncAndroidModalOverlay.addEventListener("click", (e) => {
+      if (e.target === syncAndroidModalOverlay) {
+        syncAndroidModalOverlay.classList.add("is-hidden");
+      }
+    });
+  }
+
+  if (copySyncIpBtn) {
+    copySyncIpBtn.addEventListener("click", () => {
+      if (syncServerIpInput) {
+        navigator.clipboard.writeText(syncServerIpInput.value);
+        const orig = copySyncIpBtn.innerHTML;
+        copySyncIpBtn.innerHTML = '<i class="ph ph-check"></i> ¡Copiado!';
+        setTimeout(() => { copySyncIpBtn.innerHTML = orig; }, 2000);
+      }
+    });
+  }
+});

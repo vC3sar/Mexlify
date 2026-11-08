@@ -4,7 +4,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "test": "node tests/test_sync_server.js && node tests/test_sync_integration.js && node tests/test_discord_rich_presence.js && node tests/test_fullscreen_f11.js && node tests/test_obteniendo_badge.js && node APK_Player_Android/tests/test_android_player.js && node APK_Player_Android/tests/test_qr_sync.js && node APK_Player_Android/tests/test_lyrics_fallback.js"
   },
   "description": "Mexlify - Alpha",
   "author": "vC3sar",
@@ -26,6 +27,7 @@
     "mysql2": "^3.15.3",
     "path": "^0.12.7",
     "play-dl": "^1.9.7",
+    "qrcode": "^1.5.4",
     "simple-notify": "^1.0.6",
     "sqlite3": "^6.0.1",
     "sweetalert2": "^11.26.25",

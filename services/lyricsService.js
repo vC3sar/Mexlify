@@ -78,12 +78,13 @@ function cleanSongMetadata(rawTitle, rawArtist) {
     }
   }
 
-  // Eliminar palabras de video/calidad innecesarias
+  // Eliminar palabras de video/calidad/features innecesarias
   const cleanedTitle = title
-    .replace(/[\(\[\{][^\)\]\}]*?(official|oficial|video|audio|lyrics?|lyric|videoclip|clip|visualizer|hd|4k|hq|remaster|versi[oó]n)[^\)\]\}]*?[\)\]\}]/gi, "")
+    .replace(/[\(\[\{][^\)\]\}]*?(official|oficial|video|audio|lyrics?|lyric|videoclip|clip|visualizer|hd|4k|hq|remaster|versi[oó]n|feat\.?|ft\.?)[^\)\]\}]*?[\)\]\}]/gi, "")
     .replace(/\b(official\s*(music)?\s*video|video\s*oficial|audio\s*oficial|official\s*audio|lyric\s*video|videoclip|visualizer)\b/gi, "")
     .replace(/\b(feat\.?|ft\.?)\s+[^\(\[\{\-]+/gi, "")
     .replace(/[\(\[\{]\s*[\)\]\}]/g, "")
+    .replace(/[\(\[\{\)\]\}]/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
 
