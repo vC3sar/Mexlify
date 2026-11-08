@@ -56,3 +56,4 @@ node tests/test_qr_sync.js
 # Pruebas del motor de letras y fallback LRCLIB
 node tests/test_lyrics_fallback.js
 ```
+

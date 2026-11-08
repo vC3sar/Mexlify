@@ -1,6 +1,20 @@
 import assert from "assert";
 import QRCode from "qrcode";
-import jsQR from "jsqr";
+
+// Soporte de resolución tanto en raíz del monorepo como en subproyecto Android / CI
+let jsQR;
+try {
+  const mod = await import("jsqr");
+  jsQR = mod.default || mod;
+} catch {
+  try {
+    const mod = await import("../../node_modules/jsqr/dist/jsQR.js");
+    jsQR = mod.default || mod;
+  } catch {
+    const mod = await import("../node_modules/jsqr/dist/jsQR.js");
+    jsQR = mod.default || mod;
+  }
+}
 
 console.log("=== TEST SUITE: MEXLIFY QR SYNC (PC GENERATION & MOBILE DECODING) ===");
 
